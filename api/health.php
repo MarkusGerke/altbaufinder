@@ -54,4 +54,13 @@ try {
     echo "Column check error: " . $e->getMessage() . "\n";
 }
 
+echo "\nChecking JWT (Login / Registrierung)...\n";
+try {
+    require_once __DIR__ . '/auth_helpers.php';
+    $jwtOk = jwt_secret() !== '';
+    echo 'JWT login ready: ' . ($jwtOk ? "yes (secret ok)\n" : "NO — in api/config.php jwt_secret setzen (mind. 32 Zeichen) oder Umgebungsvariable ALTBAUFINDER_JWT_SECRET / JWT_SECRET\n");
+} catch (Throwable $e) {
+    echo 'JWT check error: ' . $e->getMessage() . "\n";
+}
+
 echo "\nAll checks complete.\n";
