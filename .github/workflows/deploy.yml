@@ -1,0 +1,135 @@
+# Push auf main → Build + optional Deploy (SSH und/oder FTP).
+#
+# Secrets (Repository → Settings → Secrets → Actions):
+#
+# SSH (rsync, empfohlen wenn Deploy-Key auf dem Server liegt):
+#   SSH_PRIVATE_KEY, SSH_HOST, SSH_USER, REMOTE_WEBROOT (absolut, mit / am Ende)
+#
+# FTP (all-inkl ohne SSH-Key – reicht oft FTP-Zugang):
+#   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_REMOTE_DIR
+#   FTP_REMOTE_DIR = Ordner der Subdomain relativ zum FTP-Root, z. B. altbaufinder.markusgerke.com (ohne führenden Slash)
+#   FTP nutzt fest ftps:21 (all-inkl üblich). Sonst Workflow-Zeilen protocol/port anpassen.
+#
+# Wenn BEIDE Varianten konfiguriert sind, laufen beide Jobs (doppeltes Deploy möglich).
+# Nur eine Variante Secrets setzen, wenn du nicht beides willst.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install & build
+        run: npm ci && npm run build
+        env:
+          VITE_API_URL: https://altbaufinder.markusgerke.com/api
+
+      - name: API für Upload (ohne config.php)
+        run: |
+          mkdir -p api-release
+          cp api/classifications.php api/db.php api/schema.sql api/config.example.php api-release/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-release
+          path: api-release
+
+  deploy-ssh:
+    needs: build
+    if: ${{ secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_HOST != '' && secrets.SSH_USER != '' && secrets.REMOTE_WEBROOT != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: api-release
+          path: api-release
+
+      - name: SSH vorbereiten
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Rsync dist → Webroot
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
+            dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_WEBROOT }}/"
+
+      - name: Rsync api → Webroot/api
+        run: |
+          rsync -avz \
+            -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
+            api-release/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_WEBROOT }}/api/"
+
+  deploy-ftp:
+    needs: build
+    if: ${{ secrets.FTP_SERVER != '' && secrets.FTP_USERNAME != '' && secrets.FTP_PASSWORD != '' && secrets.FTP_REMOTE_DIR != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: api-release
+          path: api-release
+
+      # all-inkl: oft explizites FTPS auf Port 21 — bei Fehlern im Log ggf. auf protocol: ftp wechseln
+      - name: FTP Upload (Frontend dist/)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./dist/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/
+          state-name: altbaufinder-dist
+          log-level: minimal
+
+      - name: FTP Upload (API)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./api-release/
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/api/
+          state-name: altbaufinder-api
+          log-level: minimal

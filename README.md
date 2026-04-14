@@ -47,11 +47,48 @@ VITE_API_URL=https://altbaufinder.markusgerke.com/api npm run build
 
 ## GitHub & automatisches Deployment (all-inkl)
 
-1. Auf GitHub ein **leeres** Repository `altbaufinder` unter deinem Account anlegen.
-2. Lokal: `git init`, erster Commit, `git remote add origin …`, `git push -u origin main`.
-3. **Deploy-Key** (nur lesen/schreiben Webspace): SSH-Key paar erzeugen, **öffentlichen** Schlüssel im KAS beim Webspace hinterlegen (falls all-inkl „SSH-Key“ anbietet), **privaten** Schlüssel als GitHub-Secret `SSH_PRIVATE_KEY` speichern.
-4. Unter **Settings → Secrets and variables → Actions** diese Secrets setzen: `SSH_PRIVATE_KEY`, `SSH_HOST`, `SSH_USER`, `REMOTE_WEBROOT` (absoluter Serverpfad zum Ordner der Subdomain, mit `/` am Ende). Kommentare siehe `.github/workflows/deploy-allinkl.yml`.
-5. Bei jedem Push auf **`main`** baut die Action das Projekt und lädt `dist/` und `api/` (ohne `config.php`) per **rsync** hoch. `api/config.php` bleibt nur auf dem Server und wird nicht überschrieben.
+Repository: [github.com/MarkusGerke/altbaufinder](https://github.com/MarkusGerke/altbaufinder)
+
+### Was automatisch läuft
+
+- **CI** (`.github/workflows/ci.yml`): bei jedem Push / Pull Request auf `main` → `npm ci`, Lint, Production-Build.
+- **Deploy** (`.github/workflows/deploy.yml`): bei Push auf `main` → Build, dann **optional** Upload per **SSH/rsync** und/oder **FTP** — je nachdem, welche Secrets gesetzt sind.
+- **Dependabot** (`.github/dependabot.yml`): wöchentlich npm-, monatlich GitHub-Actions-Updates als PRs.
+
+### Lokale Kurzbefehle
+
+```bash
+npm run build:prod   # Build mit Produktions-API-URL
+npm run check        # Lint + Production-Build (wie CI)
+```
+
+### Secrets (GitHub → Settings → Secrets and variables → Actions)
+
+**Variante A – SSH (empfohlen, wenn Deploy-Key auf dem Server funktioniert)**
+
+| Secret | Beispiel / Hinweis |
+|--------|---------------------|
+| `SSH_PRIVATE_KEY` | Inhalt der **privaten** Deploy-Key-Datei |
+| `SSH_HOST` | z. B. `w00d7d54.kasserver.com` |
+| `SSH_USER` | z. B. `ssh-w00d7d54` |
+| `REMOTE_WEBROOT` | Absoluter Pfad zum Webroot der Subdomain, **mit /** am Ende |
+
+**Variante B – FTP (ohne SSH-Key; all-inkl-Zugang wie im FTP-Client)**
+
+| Secret | Beispiel / Hinweis |
+|--------|---------------------|
+| `FTP_SERVER` | z. B. `w00d7d54.kasserver.com` |
+| `FTP_USERNAME` | z. B. FTP-Benutzer aus dem KAS |
+| `FTP_PASSWORD` | FTP-Passwort |
+| `FTP_REMOTE_DIR` | Ordner der Subdomain **ohne** führenden Slash, z. B. `altbaufinder.markusgerke.com` |
+
+Es werden nur `classifications.php`, `db.php`, `schema.sql`, `config.example.php` hochgeladen — **`api/config.php` liegt nur auf dem Server** und wird nicht überschrieben.
+
+Nur **eine** Variante (SSH **oder** FTP) Secrets setzen, sonst laufen beide Deploy-Jobs.
+
+FTP nutzt im Workflow **ftps** auf Port **21**. Wenn dein Hoster nur Klartext-FTP erlaubt, in `.github/workflows/deploy.yml` bei beiden FTP-Schritten `protocol: ftp` setzen.
+
+Details und Kommentare: `.github/workflows/deploy.yml`.
 
 ## Spätere Ausbaustufe: Web-Speicherung (V2)
 
