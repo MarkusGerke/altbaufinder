@@ -15,11 +15,25 @@ try {
     $pdo = getDbConnection();
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Datenbankverbindung fehlgeschlagen']);
+    echo json_encode(['error' => 'Datenbankverbindung fehlgeschlagen', 'detail' => $e->getMessage()]);
     exit;
 }
 
-// Prüfe, ob geometry_json-Spalte vorhanden ist; wenn nicht, versuche Auto-Migration.
+// Auto-Setup: Tabelle + geometry_json-Spalte anlegen, falls nötig.
+try {
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS classifications (
+            building_id VARCHAR(128) NOT NULL PRIMARY KEY,
+            classification ENUM('original','altbau_entstuckt','kein_altbau') NULL,
+            year_of_construction INT NULL,
+            geometry_json LONGTEXT NULL,
+            last_modified BIGINT NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+} catch (Exception $e) {
+    // Tabelle existiert vermutlich schon — kein Problem.
+}
+
 $hasGeomCol = false;
 try {
     $cols = $pdo->query("SHOW COLUMNS FROM classifications LIKE 'geometry_json'")->fetchAll();
@@ -29,106 +43,101 @@ try {
         $hasGeomCol = true;
     }
 } catch (Exception $e) {
-    // ALTER schlug fehl (z. B. fehlende Rechte) — weiter ohne geometry_json.
+    // ALTER fehlgeschlagen — weiter ohne geometry_json.
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
-if ($method === 'GET') {
-    $sql = $hasGeomCol
-        ? 'SELECT building_id, classification, year_of_construction, last_modified, geometry_json FROM classifications'
-        : 'SELECT building_id, classification, year_of_construction, last_modified FROM classifications';
-    $stmt = $pdo->query($sql);
-    $rows = $stmt->fetchAll();
-    $result = [];
-    foreach ($rows as $row) {
-        $geom = null;
-        if ($hasGeomCol && !empty($row['geometry_json'])) {
-            $decoded = json_decode($row['geometry_json'], true);
-            $geom = is_array($decoded) ? $decoded : null;
+try {
+    if ($method === 'GET') {
+        $sql = $hasGeomCol
+            ? 'SELECT building_id, classification, year_of_construction, last_modified, geometry_json FROM classifications'
+            : 'SELECT building_id, classification, year_of_construction, last_modified FROM classifications';
+        $stmt = $pdo->query($sql);
+        $rows = $stmt->fetchAll();
+        $result = [];
+        foreach ($rows as $row) {
+            $geom = null;
+            if ($hasGeomCol && !empty($row['geometry_json'])) {
+                $decoded = json_decode($row['geometry_json'], true);
+                $geom = is_array($decoded) ? $decoded : null;
+            }
+            $result[$row['building_id']] = [
+                'classification'       => $row['classification'],
+                'yearOfConstruction'   => $row['year_of_construction'] !== null ? (int) $row['year_of_construction'] : null,
+                'lastModified'         => (int) $row['last_modified'],
+                'geometry'             => $geom,
+            ];
         }
-        $result[$row['building_id']] = [
-            'classification'       => $row['classification'],
-            'yearOfConstruction'   => $row['year_of_construction'] !== null ? (int) $row['year_of_construction'] : null,
-            'lastModified'         => (int) $row['last_modified'],
-            'geometry'             => $geom,
-        ];
-    }
-    echo json_encode($result);
-    exit;
-}
-
-if ($method === 'POST') {
-    $input = json_decode(file_get_contents('php://input'), true);
-    if (!is_array($input)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Ungültige Eingabe']);
+        echo json_encode($result);
         exit;
     }
 
-    if ($hasGeomCol) {
-        $stmt = $pdo->prepare(
-            'INSERT INTO classifications (building_id, classification, year_of_construction, geometry_json, last_modified)
-             VALUES (:id, :cls, :year, :geom, :ts)
-             ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, geometry_json = :geom2, last_modified = :ts2'
-        );
-    } else {
-        $stmt = $pdo->prepare(
-            'INSERT INTO classifications (building_id, classification, year_of_construction, last_modified)
-             VALUES (:id, :cls, :year, :ts)
-             ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, last_modified = :ts2'
-        );
-    }
-
-    $saved = [];
-    foreach ($input as $buildingId => $entry) {
-        $cls  = $entry['classification'] ?? null;
-        $year = isset($entry['yearOfConstruction']) ? (int) $entry['yearOfConstruction'] : null;
-        $ts   = isset($entry['lastModified']) ? (int) $entry['lastModified'] : (int) (microtime(true) * 1000);
+    if ($method === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Ungültige Eingabe']);
+            exit;
+        }
 
         if ($hasGeomCol) {
-            $geomJson = null;
-            if (isset($entry['geometry']) && is_array($entry['geometry'])) {
-                $geomJson = json_encode($entry['geometry'], JSON_UNESCAPED_UNICODE);
-            }
-            $stmt->execute([
-                ':id'    => $buildingId,
-                ':cls'   => $cls,
-                ':year'  => $year,
-                ':geom'  => $geomJson,
-                ':ts'    => $ts,
-                ':cls2'  => $cls,
-                ':year2' => $year,
-                ':geom2' => $geomJson,
-                ':ts2'   => $ts,
-            ]);
+            $stmt = $pdo->prepare(
+                'INSERT INTO classifications (building_id, classification, year_of_construction, geometry_json, last_modified)
+                 VALUES (:id, :cls, :year, :geom, :ts)
+                 ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, geometry_json = :geom2, last_modified = :ts2'
+            );
         } else {
-            $stmt->execute([
-                ':id'    => $buildingId,
-                ':cls'   => $cls,
-                ':year'  => $year,
-                ':ts'    => $ts,
-                ':cls2'  => $cls,
-                ':year2' => $year,
-                ':ts2'   => $ts,
-            ]);
+            $stmt = $pdo->prepare(
+                'INSERT INTO classifications (building_id, classification, year_of_construction, last_modified)
+                 VALUES (:id, :cls, :year, :ts)
+                 ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, last_modified = :ts2'
+            );
         }
-        $saved[$buildingId] = true;
-    }
-    echo json_encode(['saved' => count($saved)]);
-    exit;
-}
 
-if ($method === 'DELETE') {
-    $id = $_GET['id'] ?? null;
-    if (!$id) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Parameter id fehlt']);
+        $saved = [];
+        foreach ($input as $buildingId => $entry) {
+            $cls  = $entry['classification'] ?? null;
+            $year = isset($entry['yearOfConstruction']) ? (int) $entry['yearOfConstruction'] : null;
+            $ts   = isset($entry['lastModified']) ? (int) $entry['lastModified'] : (int) (microtime(true) * 1000);
+
+            if ($hasGeomCol) {
+                $geomJson = null;
+                if (isset($entry['geometry']) && is_array($entry['geometry'])) {
+                    $geomJson = json_encode($entry['geometry'], JSON_UNESCAPED_UNICODE);
+                }
+                $stmt->execute([
+                    ':id' => $buildingId, ':cls' => $cls, ':year' => $year,
+                    ':geom' => $geomJson, ':ts' => $ts,
+                    ':cls2' => $cls, ':year2' => $year, ':geom2' => $geomJson, ':ts2' => $ts,
+                ]);
+            } else {
+                $stmt->execute([
+                    ':id' => $buildingId, ':cls' => $cls, ':year' => $year, ':ts' => $ts,
+                    ':cls2' => $cls, ':year2' => $year, ':ts2' => $ts,
+                ]);
+            }
+            $saved[$buildingId] = true;
+        }
+        echo json_encode(['saved' => count($saved)]);
         exit;
     }
-    $stmt = $pdo->prepare('DELETE FROM classifications WHERE building_id = :id');
-    $stmt->execute([':id' => $id]);
-    echo json_encode(['deleted' => $stmt->rowCount()]);
+
+    if ($method === 'DELETE') {
+        $id = $_GET['id'] ?? null;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Parameter id fehlt']);
+            exit;
+        }
+        $stmt = $pdo->prepare('DELETE FROM classifications WHERE building_id = :id');
+        $stmt->execute([':id' => $id]);
+        echo json_encode(['deleted' => $stmt->rowCount()]);
+        exit;
+    }
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Datenbankfehler', 'detail' => $e->getMessage()]);
     exit;
 }
 
