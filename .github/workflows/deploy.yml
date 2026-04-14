@@ -47,12 +47,12 @@ jobs:
           mkdir -p api-release
           cp api/classifications.php api/db.php api/schema.sql api/config.example.php api-release/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-release
           path: api-release
