@@ -11,7 +11,7 @@ const DEFAULT_FILTERS: FilterState = {
   showGreen: true,
   showYellow: true,
   showRed: true,
-  showUnclassified: true,
+  showUnclassified: false,
 }
 
 const EXPORT_FILENAME = 'altbaufinder-classifications.json'

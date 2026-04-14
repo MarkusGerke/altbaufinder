@@ -198,8 +198,7 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
 
     const geolocate = new maplibregl.GeolocateControl({
       positionOptions: geolocatePositionOptions(),
-      // iOS Safari: dauerhaftes Tracking (watchPosition) oft instabil → nur bei Tipp zentrieren, erneut tippen zum Aktualisieren.
-      trackUserLocation: !isAppleTouchDevice(),
+      trackUserLocation: true,
       showAccuracyCircle: true,
       showUserLocation: true,
       fitBoundsOptions: {
@@ -229,6 +228,9 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
 
       const baseFill = whiteModeRef.current ? '#ffffff' : '#94a3b8'
       const baseOutline = whiteModeRef.current ? '#e2e8f0' : '#64748b'
+      const showUnclassifiedBase = filtersRef.current.showUnclassified
+      const baseFillOpacity = showUnclassifiedBase ? 0.9 : 0
+      const baseOutlinePaint = showUnclassifiedBase ? baseOutline : 'rgba(0,0,0,0)'
 
       map.addLayer({
         id: 'buildings-fill',
@@ -238,8 +240,8 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
         minzoom: 14,
         paint: {
           'fill-color': baseFill,
-          'fill-opacity': 0.9,
-          'fill-outline-color': baseOutline,
+          'fill-opacity': baseFillOpacity,
+          'fill-outline-color': baseOutlinePaint,
         },
       })
 
@@ -259,7 +261,7 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
           'fill-extrusion-color': whiteModeRef.current ? '#ffffff' : '#94a3b8',
           'fill-extrusion-height': heightExpr,
           'fill-extrusion-base': ['coalesce', ['to-number', ['get', 'render_min_height']], 0] as maplibregl.ExpressionSpecification,
-          'fill-extrusion-opacity': 0.85,
+          'fill-extrusion-opacity': showUnclassifiedBase ? 0.85 : 0,
         },
         layout: { visibility: 'none' },
       })
@@ -330,8 +332,10 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
       const selSrc = map.getSource(SELECTION_SOURCE) as maplibregl.GeoJSONSource
       selSrc.setData(selectionFeatureCollection(selectedBuildingsRef.current))
 
+      // iOS/iPadOS: programmatisches trigger() ohne Nutzeraktion liefert oft Fehler → Control bleibt „durchgestrichen“.
       const shouldAutoGeolocate =
         isMobileGeolocateContext() &&
+        !isAppleTouchDevice() &&
         typeof sessionStorage !== 'undefined' &&
         sessionStorage.getItem(GEO_SESSION_DISMISS_KEY) !== '1'
 
@@ -382,10 +386,12 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     if (!map?.getLayer('buildings-fill')) return
     const baseFill = whiteMode ? '#ffffff' : '#94a3b8'
     const baseOutline = whiteMode ? '#e2e8f0' : '#64748b'
+    const showU = filters.showUnclassified
     map.setPaintProperty('buildings-fill', 'fill-color', baseFill)
-    map.setPaintProperty('buildings-fill', 'fill-outline-color', baseOutline)
-    map.setPaintProperty('buildings-fill', 'fill-opacity', 0.9)
+    map.setPaintProperty('buildings-fill', 'fill-outline-color', showU ? baseOutline : 'rgba(0,0,0,0)')
+    map.setPaintProperty('buildings-fill', 'fill-opacity', showU ? 0.9 : 0)
     map.setPaintProperty('buildings-extrusion', 'fill-extrusion-color', whiteMode ? '#ffffff' : '#94a3b8')
+    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-opacity', showU ? 0.85 : 0)
     map.setLayoutProperty('buildings-fill', 'visibility', viewMode === '2d' ? 'visible' : 'none')
     map.setLayoutProperty('buildings-extrusion', 'visibility', viewMode === '3d' ? 'visible' : 'none')
     if (viewMode === '3d') {
