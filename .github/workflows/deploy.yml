@@ -1,15 +1,10 @@
-# Push auf main → Build + optional Deploy (SSH und/oder FTP).
+# Push auf main → Build + Deploy per SSH (rsync) auf all-inkl.
 #
 # Secrets (Repository → Settings → Secrets and variables → Actions):
-#
-# SSH (rsync):
-#   SSH_PRIVATE_KEY, SSH_HOST, SSH_USER, REMOTE_WEBROOT (absolut, mit / am Ende)
-#
-# FTP:
-#   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_REMOTE_DIR (ohne führenden Slash)
-#
-# Hinweis: GitHub erlaubt `secrets` nicht in job.if — Bedingungen nur bei einzelnen Steps.
-# Nur SSH: FTP-* Secrets löschen. Nur FTP: SSH-* Secrets löschen.
+#   SSH_PRIVATE_KEY   Inhalt der privaten Deploy-Key-Datei
+#   SSH_HOST          z. B. w00d7d54.kasserver.com
+#   SSH_USER          z. B. ssh-w00d7d54
+#   REMOTE_WEBROOT    Absoluter Pfad zum Webroot, mit / am Ende
 
 name: Deploy
 
@@ -25,9 +20,14 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      REMOTE_WEBROOT: ${{ secrets.REMOTE_WEBROOT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,69 +46,17 @@ jobs:
           mkdir -p api-release
           cp api/classifications.php api/db.php api/schema.sql api/config.example.php api-release/
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: api-release
-          path: api-release
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: api-release
-          path: api-release
-
       - name: Deploy per SSH (rsync)
-        if: ${{ secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_HOST != '' && secrets.SSH_USER != '' && secrets.REMOTE_WEBROOT != '' }}
+        if: env.SSH_PRIVATE_KEY != '' && env.SSH_HOST != '' && env.SSH_USER != '' && env.REMOTE_WEBROOT != ''
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
-            dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_WEBROOT }}/"
+            dist/ "${SSH_USER}@${SSH_HOST}:${REMOTE_WEBROOT}"
           rsync -avz \
             -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
-            api-release/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_WEBROOT }}/api/"
-
-      - name: FTP Upload (Frontend dist/)
-        if: ${{ secrets.FTP_SERVER != '' && secrets.FTP_USERNAME != '' && secrets.FTP_PASSWORD != '' && secrets.FTP_REMOTE_DIR != '' }}
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          port: 21
-          local-dir: ./dist/
-          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/
-          state-name: altbaufinder-dist
-          log-level: minimal
-
-      - name: FTP Upload (API)
-        if: ${{ secrets.FTP_SERVER != '' && secrets.FTP_USERNAME != '' && secrets.FTP_PASSWORD != '' && secrets.FTP_REMOTE_DIR != '' }}
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          port: 21
-          local-dir: ./api-release/
-          server-dir: ${{ secrets.FTP_REMOTE_DIR }}/api/
-          state-name: altbaufinder-api
-          log-level: minimal
+            api-release/ "${SSH_USER}@${SSH_HOST}:${REMOTE_WEBROOT}api/"
