@@ -1,10 +1,10 @@
 name: CI
 
+# Nur PRs: Push auf main löst ohnehin „Deploy“ aus (dort inkl. Build) — spart doppelten Build.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
