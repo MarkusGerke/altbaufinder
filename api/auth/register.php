@@ -21,7 +21,7 @@ require_once __DIR__ . '/../auth_helpers.php';
 $secret = jwt_secret();
 if ($secret === '') {
     http_response_code(503);
-    echo json_encode(['error' => 'Server: jwt_secret in config.php fehlt']);
+    echo jwt_config_error_json();
     exit;
 }
 

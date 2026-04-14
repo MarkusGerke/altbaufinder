@@ -6,10 +6,42 @@ function get_app_config(): array {
     return require __DIR__ . '/config.php';
 }
 
+/** Mindestlänge für JWT-HMAC (Bytes). */
+const JWT_SECRET_MIN_LENGTH = 32;
+
+/**
+ * Geheimer Schlüssel für JWT: zuerst config.php, sonst Umgebungsvariable ALTBAUFINDER_JWT_SECRET oder JWT_SECRET.
+ * Leerstring, wenn nichts Gültiges gesetzt ist.
+ */
 function jwt_secret(): string {
-    $cfg = get_app_config();
-    $s = $cfg['jwt_secret'] ?? '';
-    return is_string($s) ? $s : '';
+    $candidates = [];
+    try {
+        $cfg = get_app_config();
+        if (isset($cfg['jwt_secret']) && is_string($cfg['jwt_secret'])) {
+            $candidates[] = trim($cfg['jwt_secret']);
+        }
+    } catch (Throwable $e) {
+        // config.php fehlt oder fehlerhaft — nur Env prüfen
+    }
+    foreach (['ALTBAUFINDER_JWT_SECRET', 'JWT_SECRET'] as $envKey) {
+        $v = getenv($envKey);
+        if ($v !== false && $v !== '') {
+            $candidates[] = trim((string) $v);
+        }
+    }
+    foreach ($candidates as $s) {
+        if (strlen($s) >= JWT_SECRET_MIN_LENGTH) {
+            return $s;
+        }
+    }
+    return '';
+}
+
+/** JSON-Body für 503, wenn jwt_secret fehlt oder zu kurz ist. */
+function jwt_config_error_json(): string {
+    return json_encode([
+        'error' => 'Der Server ist für Anmeldungen noch nicht konfiguriert. Der Administrator muss in api/config.php einen Eintrag jwt_secret setzen (mindestens 32 Zeichen, siehe config.example.php) oder die Umgebungsvariable ALTBAUFINDER_JWT_SECRET bzw. JWT_SECRET setzen.',
+    ], JSON_UNESCAPED_UNICODE);
 }
 
 /** Authorization: Bearer … */
