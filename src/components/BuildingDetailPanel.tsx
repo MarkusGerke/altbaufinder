@@ -117,7 +117,7 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
         <div className="mt-4 pt-3 border-t border-slate-600 space-y-2">
           <p className="text-slate-400 text-xs">Klassifizierung setzen:</p>
           <ClassificationButtons
-            onClassify={(c) => setClassification(building.id, c)}
+            onClassify={(c) => setClassification(building.id, c, undefined, building.geometry)}
             activeClassification={classification}
           />
           {classification && (
@@ -148,7 +148,7 @@ function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings
 
   const classifyAll = (c: BuildingClassification) => {
     for (const b of buildings) {
-      setClassification(b.id, c)
+      setClassification(b.id, c, undefined, b.geometry)
     }
     onDeselectAll?.()
   }

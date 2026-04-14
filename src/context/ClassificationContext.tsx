@@ -4,7 +4,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -18,17 +17,14 @@ import {
 
 type ClassificationState = Record<string, ClassificationEntry>
 
-type RemoveFeatureStateFn = (buildingId: string) => void
-
 const API_ENABLED = !!import.meta.env.VITE_API_URL
 
 interface ClassificationContextValue {
   classifications: ClassificationState
-  setClassification: (buildingId: string, classification: BuildingClassification, yearOfConstruction?: number | null) => void
+  setClassification: (buildingId: string, classification: BuildingClassification, yearOfConstruction?: number | null, geometry?: GeoJSON.Geometry | null) => void
   getClassification: (buildingId: string) => BuildingClassification
   getYearOfConstruction: (buildingId: string) => number | null | undefined
   setYearOfConstruction: (buildingId: string, year: number | null) => void
-  registerRemoveFeatureState: (fn: RemoveFeatureStateFn | null) => void
   importClassifications: (data: ClassificationState) => void
   hasPendingChanges: boolean
   saveAllPending: () => void
@@ -42,7 +38,6 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
   )
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set())
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
-  const removeFeatureStateRef = useRef<RemoveFeatureStateFn | null>(null)
 
   useEffect(() => {
     if (!API_ENABLED) return
@@ -61,14 +56,7 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
   }, [])
 
-  const registerRemoveFeatureState = useCallback((fn: RemoveFeatureStateFn | null) => {
-    removeFeatureStateRef.current = fn
-  }, [])
-
-  const setClassification = useCallback((buildingId: string, classification: BuildingClassification, yearOfConstruction?: number | null) => {
-    if (classification === null) {
-      removeFeatureStateRef.current?.(buildingId)
-    }
+  const setClassification = useCallback((buildingId: string, classification: BuildingClassification, yearOfConstruction?: number | null, geometry?: GeoJSON.Geometry | null) => {
     setClassifications((prev) => {
       const next = { ...prev }
       if (classification === null) {
@@ -79,6 +67,7 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
           classification,
           yearOfConstruction: yearOfConstruction !== undefined ? yearOfConstruction : (existing?.yearOfConstruction ?? null),
           lastModified: Date.now(),
+          geometry: geometry !== undefined ? geometry : (existing?.geometry ?? null),
         }
       }
       return next
@@ -148,11 +137,11 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ClassificationContextValue>(
     () => ({
       classifications, setClassification, getClassification, getYearOfConstruction,
-      setYearOfConstruction, registerRemoveFeatureState, importClassifications,
+      setYearOfConstruction, importClassifications,
       hasPendingChanges, saveAllPending,
     }),
     [classifications, setClassification, getClassification, getYearOfConstruction,
-     setYearOfConstruction, registerRemoveFeatureState, importClassifications,
+     setYearOfConstruction, importClassifications,
      hasPendingChanges, saveAllPending]
   )
 
