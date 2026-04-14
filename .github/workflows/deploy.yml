@@ -48,7 +48,7 @@ jobs:
       - name: API für Upload (ohne config.php)
         run: |
           mkdir -p api-release/migrations
-          cp api/classifications.php api/db.php api/schema.sql api/config.example.php api-release/
+          cp api/classifications.php api/db.php api/schema.sql api/config.example.php api/health.php api-release/
           cp api/migrations/*.sql api-release/migrations/
 
       - name: Deploy per SSH (rsync)
