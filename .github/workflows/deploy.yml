@@ -59,7 +59,7 @@ jobs:
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          rsync -avz --delete \
+          rsync -avz --delete --exclude 'api/' \
             -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
             dist/ "${SSH_USER}@${SSH_HOST}:${REMOTE_WEBROOT}"
           rsync -avz \
