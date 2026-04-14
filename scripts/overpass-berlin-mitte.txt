@@ -1,0 +1,9 @@
+[out:json][timeout:180];
+// Berlin-Mitte (Bezirk): alle Gebäudegrundrisse als ways UND multipolygon-relations
+(
+  way["building"](52.50, 13.37, 52.54, 13.44);
+  relation["building"](52.50, 13.37, 52.54, 13.44);
+);
+out body geom;
+>;
+out skel qt;
