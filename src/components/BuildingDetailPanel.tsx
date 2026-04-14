@@ -1,9 +1,16 @@
 import { useState, useEffect, useMemo } from 'react'
+import { X } from 'lucide-react'
 import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
 import type { SelectedBuildingGeo } from './MapView'
 import { segmentStorageKey } from '../utils/segmentStorageKey'
 import { CLASSIFICATION_HEX, CLASSIFICATION_LABELS, CLASSIFICATION_ORDER } from '../classificationLabels'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
 
 interface BuildingDetailPanelProps {
   buildings: SelectedBuildingGeo[]
@@ -33,27 +40,29 @@ function ClassificationButtons({
         const active = activeClassification === cls
         const hex = CLASSIFICATION_HEX[cls]
         return (
-          <button
+          <Button
             key={cls}
             type="button"
+            variant="outline"
+            size="sm"
             title={CLASSIFICATION_LABELS[cls]}
             onClick={() => onClassify(cls)}
-            className={`px-2 py-1.5 rounded text-sm min-w-[2.25rem] border border-slate-500/60 ${
-              active ? `ring-2 ring-offset-1 ring-offset-slate-700 ${BTN_RING[cls]}` : ''
-            }`}
-            style={{ backgroundColor: hex, color: cls === 'stuck_schoen' || cls === 'stuck_mittel' ? '#1e293b' : '#fff' }}
+            className={cn(
+              'min-w-[2.25rem] border-border',
+              active && `ring-2 ring-offset-2 ring-offset-background ${BTN_RING[cls]}`
+            )}
+            style={{
+              backgroundColor: hex,
+              color: cls === 'stuck_schoen' || cls === 'stuck_mittel' ? '#1e293b' : '#fff',
+            }}
           >
             {i + 1}
-          </button>
+          </Button>
         )
       })}
-      <button
-        type="button"
-        onClick={() => onClassify(null)}
-        className="px-2 py-1 rounded text-sm bg-slate-600 hover:bg-slate-500"
-      >
+      <Button type="button" variant="secondary" size="sm" onClick={() => onClassify(null)}>
         Zurücksetzen
-      </button>
+      </Button>
     </div>
   )
 }
@@ -89,10 +98,15 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
     <>
       <dl className="space-y-1 text-sm">
         <div>
-          <dt className="text-slate-400">ID</dt>
+          <dt className="text-muted-foreground">ID</dt>
           <dd>
             {osmLink ? (
-              <a href={osmLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+              <a
+                href={osmLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline underline-offset-2 hover:opacity-90"
+              >
                 {building.id}
               </a>
             ) : (
@@ -101,55 +115,67 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
           </dd>
         </div>
         <div>
-          <dt className="text-slate-400">Höhe</dt>
+          <dt className="text-muted-foreground">Höhe</dt>
           <dd>{height}</dd>
         </div>
         {classification && (
           <div>
-            <dt className="text-slate-400">Klassifizierung</dt>
+            <dt className="text-muted-foreground">Klassifizierung</dt>
             <dd>{CLASSIFICATION_LABELS[classification]}</dd>
           </div>
         )}
         {savedYear != null && (
           <div>
-            <dt className="text-slate-400">Baujahr</dt>
+            <dt className="text-muted-foreground">Baujahr</dt>
             <dd>{savedYear}</dd>
           </div>
         )}
       </dl>
       {isEditor && (
-        <div className="mt-4 pt-3 border-t border-slate-600 space-y-2">
-          <p className="text-slate-400 text-xs">Stufe wählen (1 = schönster Stuck … 5 = entstuckt):</p>
-          <ClassificationButtons
-            onClassify={(c) => setClassification(storageKey, c, undefined, building.geometry)}
-            activeClassification={classification}
-          />
-          {classification && (
-            <div className="mt-3">
-              <label className="block text-slate-400 text-xs mb-1" htmlFor="year-input">Baujahr (optional)</label>
-              <input
-                id="year-input"
-                type="number"
-                min="1200"
-                max={new Date().getFullYear()}
-                placeholder="z.B. 1897"
-                value={yearInput}
-                onChange={(e) => setYearInput(e.target.value)}
-                onBlur={commitYear}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitYear()
-                }}
-                className="w-full px-2 py-1 rounded text-sm bg-slate-600 text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
-              />
-            </div>
-          )}
-        </div>
+        <>
+          <Separator className="my-4" />
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-xs">Stufe wählen (1 = schönster Stuck … 5 = entstuckt):</p>
+            <ClassificationButtons
+              onClassify={(c) => setClassification(storageKey, c, undefined, building.geometry)}
+              activeClassification={classification}
+            />
+            {classification && (
+              <div className="mt-3 space-y-2">
+                <Label htmlFor="year-input" className="text-muted-foreground text-xs">
+                  Baujahr (optional)
+                </Label>
+                <Input
+                  id="year-input"
+                  type="number"
+                  min={1200}
+                  max={new Date().getFullYear()}
+                  placeholder="z.B. 1897"
+                  value={yearInput}
+                  onChange={(e) => setYearInput(e.target.value)}
+                  onBlur={commitYear}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitYear()
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </>
       )}
     </>
   )
 }
 
-function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings: SelectedBuildingGeo[]; isEditor: boolean; onDeselectAll?: () => void }) {
+function MultiBuildingDetail({
+  buildings,
+  isEditor,
+  onDeselectAll,
+}: {
+  buildings: SelectedBuildingGeo[]
+  isEditor: boolean
+  onDeselectAll?: () => void
+}) {
   const { setClassification } = useClassification()
 
   const classifyAll = (c: BuildingClassification) => {
@@ -161,12 +187,15 @@ function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings
 
   return (
     <>
-      <p className="text-sm text-slate-300">{buildings.length} Gebäude ausgewählt</p>
+      <p className="text-sm">{buildings.length} Gebäude ausgewählt</p>
       {isEditor && (
-        <div className="mt-4 pt-3 border-t border-slate-600 space-y-2">
-          <p className="text-slate-400 text-xs">Alle klassifizieren:</p>
-          <ClassificationButtons onClassify={classifyAll} />
-        </div>
+        <>
+          <Separator className="my-4" />
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-xs">Alle klassifizieren:</p>
+            <ClassificationButtons onClassify={classifyAll} />
+          </div>
+        </>
       )}
     </>
   )
@@ -176,25 +205,20 @@ export default function BuildingDetailPanel({ buildings, onClose, isEditor, onDe
   const isSingle = buildings.length === 1
 
   return (
-    <div className="bg-slate-700 text-white rounded-lg shadow-lg p-4 min-w-[240px] max-h-[80vh] overflow-y-auto">
-      <div className="flex justify-between items-start gap-2 mb-3">
-        <h3 className="font-semibold text-slate-100">
-          {isSingle ? 'Gebäude' : `${buildings.length} Gebäude`}
-        </h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-slate-400 hover:text-white leading-none"
-          aria-label="Schließen"
-        >
-          ×
-        </button>
-      </div>
-      {isSingle ? (
-        <SingleBuildingDetail building={buildings[0]} isEditor={isEditor} />
-      ) : (
-        <MultiBuildingDetail buildings={buildings} isEditor={isEditor} onDeselectAll={onDeselectAll} />
-      )}
-    </div>
+    <Card className="min-w-[240px] max-h-[80vh] overflow-y-auto shadow-lg">
+      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
+        <CardTitle className="text-base">{isSingle ? 'Gebäude' : `${buildings.length} Gebäude`}</CardTitle>
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} aria-label="Schließen">
+          <X className="size-4" />
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isSingle ? (
+          <SingleBuildingDetail building={buildings[0]} isEditor={isEditor} />
+        ) : (
+          <MultiBuildingDetail buildings={buildings} isEditor={isEditor} onDeselectAll={onDeselectAll} />
+        )}
+      </CardContent>
+    </Card>
   )
 }

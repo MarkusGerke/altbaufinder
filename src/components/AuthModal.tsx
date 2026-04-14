@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 interface AuthModalProps {
   open: boolean
@@ -20,8 +30,6 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
       clearError()
     }
   }, [open, clearError])
-
-  if (!open) return null
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,74 +54,98 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
   const displayError = localError ?? error
 
   return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="auth-title"
-      onClick={onClose}
-    >
-      <div
-        className="bg-slate-800 text-white rounded-xl shadow-xl max-w-sm w-full border border-slate-600"
-        onClick={(ev) => ev.stopPropagation()}
-      >
-        <div className="flex justify-between items-center gap-2 px-4 py-3 border-b border-slate-600">
-          <h2 id="auth-title" className="text-lg font-semibold">
-            {mode === 'login' ? 'Anmelden' : 'Registrieren'}
-          </h2>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none px-1" aria-label="Schließen">
-            ×
-          </button>
-        </div>
-        <div className="p-4 flex gap-2 mb-2">
-          <button
-            type="button"
-            className={`flex-1 py-1.5 rounded text-sm ${mode === 'login' ? 'bg-slate-600 ring-1 ring-slate-400' : 'bg-slate-700'}`}
-            onClick={() => { setMode('login'); setLocalError(null) }}
-          >
-            Login
-          </button>
-          <button
-            type="button"
-            className={`flex-1 py-1.5 rounded text-sm ${mode === 'register' ? 'bg-slate-600 ring-1 ring-slate-400' : 'bg-slate-700'}`}
-            onClick={() => { setMode('register'); setLocalError(null) }}
-          >
-            Registrieren
-          </button>
-        </div>
-        <form onSubmit={submit} className="px-4 pb-4 space-y-3">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1" htmlFor="auth-email">E-Mail</label>
-            <input
-              id="auth-email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-2 py-2 rounded bg-slate-700 border border-slate-600 text-white text-sm"
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent className="sm:max-w-sm" showCloseButton>
+        <DialogHeader>
+          <DialogTitle id="auth-title">Konto</DialogTitle>
+        </DialogHeader>
+        <Tabs
+          value={mode}
+          onValueChange={(v) => {
+            setMode(v as 'login' | 'register')
+            setLocalError(null)
+          }}
+          className="w-full"
+        >
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="login">Login</TabsTrigger>
+            <TabsTrigger value="register">Registrieren</TabsTrigger>
+          </TabsList>
+          <TabsContent value="login" className="mt-0 pt-4">
+            <AuthFormInner
+              mode="login"
+              email={email}
+              password={password}
+              setEmail={setEmail}
+              setPassword={setPassword}
+              displayError={displayError}
+              pending={pending}
+              onSubmit={submit}
             />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1" htmlFor="auth-password">Passwort (min. 8 Zeichen)</label>
-            <input
-              id="auth-password"
-              type="password"
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-2 py-2 rounded bg-slate-700 border border-slate-600 text-white text-sm"
+          </TabsContent>
+          <TabsContent value="register" className="mt-0 pt-4">
+            <AuthFormInner
+              mode="register"
+              email={email}
+              password={password}
+              setEmail={setEmail}
+              setPassword={setPassword}
+              displayError={displayError}
+              pending={pending}
+              onSubmit={submit}
             />
-          </div>
-          {displayError && <p className="text-red-400 text-sm">{displayError}</p>}
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-sm font-medium"
-          >
-            {pending ? '…' : mode === 'login' ? 'Anmelden' : 'Konto anlegen'}
-          </button>
-        </form>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AuthFormInner({
+  mode,
+  email,
+  password,
+  setEmail,
+  setPassword,
+  displayError,
+  pending,
+  onSubmit,
+}: {
+  mode: 'login' | 'register'
+  email: string
+  password: string
+  setEmail: (v: string) => void
+  setPassword: (v: string) => void
+  displayError: string | null
+  pending: boolean
+  onSubmit: (e: React.FormEvent) => void
+}) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-3">
+      <div className="space-y-2">
+        <Label htmlFor={`auth-email-${mode}`}>E-Mail</Label>
+        <Input
+          id={`auth-email-${mode}`}
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
       </div>
-    </div>
+      <div className="space-y-2">
+        <Label htmlFor={`auth-password-${mode}`}>Passwort (min. 8 Zeichen)</Label>
+        <Input
+          id={`auth-password-${mode}`}
+          type="password"
+          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+      {displayError && <p className="text-destructive text-sm">{displayError}</p>}
+      <Button type="submit" className="w-full" disabled={pending}>
+        {pending ? '…' : mode === 'login' ? 'Anmelden' : 'Konto anlegen'}
+      </Button>
+    </form>
   )
 }

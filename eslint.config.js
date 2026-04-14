@@ -19,5 +19,16 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // react-hooks v7: zu streng für Ref-Sync (MapView), Auth-Refresh, Form-Reset in Effekten
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/refs': 'off',
+    },
+  },
+  {
+    files: ['src/components/ui/**/*.{ts,tsx}', 'src/context/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
   },
 ])

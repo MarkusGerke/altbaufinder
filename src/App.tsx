@@ -5,11 +5,12 @@ import BuildingDetailPanel from './components/BuildingDetailPanel'
 import LegendOverlay from './components/LegendOverlay'
 import LeaderboardPanel from './components/LeaderboardPanel'
 import AuthModal from './components/AuthModal'
+import { Button } from '@/components/ui/button'
 import { useClassification } from './context/ClassificationContext'
 import { useAuth } from './context/AuthContext'
 import type { AppMode } from './types'
 import type { ClassificationEntry } from './types'
-import { segmentStorageKey } from './utils/segmentStorageKey'
+import { segmentStorageKey } from '@/utils/segmentStorageKey'
 
 const DEFAULT_FILTERS: FilterState = {
   showStuckPerfekt: true,
@@ -93,43 +94,35 @@ function App() {
   )
 
   return (
-    <div className="w-full h-screen flex flex-col">
-      <header className="flex-shrink-0 px-4 py-2 bg-slate-800 text-white shadow flex items-center justify-between gap-2 flex-wrap">
+    <div className="flex h-screen w-full flex-col">
+      <header className="bg-card text-card-foreground flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2 shadow-sm">
         <h1 className="text-lg font-semibold">Altbaufinder Berlin</h1>
-        <div className="flex items-center gap-2 flex-wrap text-sm">
-          <button
-            type="button"
-            onClick={() => setLegendOpen(true)}
-            className="px-2 py-1 rounded bg-slate-600 hover:bg-slate-500 text-xs"
-          >
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Button type="button" variant="outline" size="sm" onClick={() => setLegendOpen(true)}>
             Legende
-          </button>
-          <button
-            type="button"
-            onClick={() => setLeaderboardOpen(true)}
-            className="px-2 py-1 rounded bg-slate-600 hover:bg-slate-500 text-xs"
-          >
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setLeaderboardOpen(true)}>
             Highscore
-          </button>
+          </Button>
           {isLoggedIn ? (
             <>
-              <span className="text-slate-300 text-xs max-w-[10rem] truncate" title={user?.email}>
+              <span className="text-muted-foreground max-w-[10rem] truncate text-xs" title={user?.email}>
                 {user?.email} · {score ?? 0} Pkt.
               </span>
-              <button type="button" onClick={logout} className="px-2 py-1 rounded bg-slate-600 hover:bg-slate-500 text-xs">
+              <Button type="button" variant="secondary" size="sm" onClick={logout}>
                 Abmelden
-              </button>
+              </Button>
             </>
           ) : (
-            <button type="button" onClick={() => setAuthOpen(true)} className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-xs">
+            <Button type="button" size="sm" onClick={() => setAuthOpen(true)}>
               Login / Registrieren
-            </button>
+            </Button>
           )}
           <a
             href="https://www.openstreetmap.org/copyright"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-slate-300 hover:text-white"
+            className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
           >
             © OSM
           </a>
