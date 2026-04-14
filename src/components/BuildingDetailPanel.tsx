@@ -3,6 +3,7 @@ import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
 import type { SelectedBuildingGeo } from './MapView'
 import { segmentStorageKey } from '../utils/segmentStorageKey'
+import { CLASSIFICATION_HEX, CLASSIFICATION_LABELS, CLASSIFICATION_ORDER } from '../classificationLabels'
 
 interface BuildingDetailPanelProps {
   buildings: SelectedBuildingGeo[]
@@ -11,10 +12,12 @@ interface BuildingDetailPanelProps {
   onDeselectAll?: () => void
 }
 
-const LABELS: Record<Exclude<BuildingClassification, null>, string> = {
-  original: 'Original (bestuckt)',
-  altbau_entstuckt: 'Entstuckt / verunstaltet',
-  kein_altbau: 'Nicht mehr vorhanden',
+const BTN_RING: Record<Exclude<BuildingClassification, null>, string> = {
+  stuck_perfekt: 'ring-green-400',
+  stuck_schoen: 'ring-lime-300',
+  stuck_mittel: 'ring-yellow-400',
+  stuck_teilweise: 'ring-orange-400',
+  entstuckt: 'ring-red-400',
 }
 
 function ClassificationButtons({
@@ -26,27 +29,24 @@ function ClassificationButtons({
 }) {
   return (
     <div className="flex flex-wrap gap-2">
-      <button
-        type="button"
-        onClick={() => onClassify('original')}
-        className={`px-2 py-1 rounded text-sm ${activeClassification === 'original' ? 'ring-2 ring-offset-1 ring-offset-slate-700 ring-green-400 bg-green-600' : 'bg-green-700 hover:bg-green-600'}`}
-      >
-        Grün
-      </button>
-      <button
-        type="button"
-        onClick={() => onClassify('altbau_entstuckt')}
-        className={`px-2 py-1 rounded text-sm ${activeClassification === 'altbau_entstuckt' ? 'ring-2 ring-offset-1 ring-offset-slate-700 ring-yellow-400 bg-yellow-600' : 'bg-yellow-700 hover:bg-yellow-600'}`}
-      >
-        Gelb
-      </button>
-      <button
-        type="button"
-        onClick={() => onClassify('kein_altbau')}
-        className={`px-2 py-1 rounded text-sm ${activeClassification === 'kein_altbau' ? 'ring-2 ring-offset-1 ring-offset-slate-700 ring-red-400 bg-red-600' : 'bg-red-700 hover:bg-red-600'}`}
-      >
-        Rot
-      </button>
+      {CLASSIFICATION_ORDER.map((cls, i) => {
+        const active = activeClassification === cls
+        const hex = CLASSIFICATION_HEX[cls]
+        return (
+          <button
+            key={cls}
+            type="button"
+            title={CLASSIFICATION_LABELS[cls]}
+            onClick={() => onClassify(cls)}
+            className={`px-2 py-1.5 rounded text-sm min-w-[2.25rem] border border-slate-500/60 ${
+              active ? `ring-2 ring-offset-1 ring-offset-slate-700 ${BTN_RING[cls]}` : ''
+            }`}
+            style={{ backgroundColor: hex, color: cls === 'stuck_schoen' || cls === 'stuck_mittel' ? '#1e293b' : '#fff' }}
+          >
+            {i + 1}
+          </button>
+        )
+      })}
       <button
         type="button"
         onClick={() => onClassify(null)}
@@ -95,7 +95,9 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
               <a href={osmLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
                 {building.id}
               </a>
-            ) : building.id}
+            ) : (
+              building.id
+            )}
           </dd>
         </div>
         <div>
@@ -105,7 +107,7 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
         {classification && (
           <div>
             <dt className="text-slate-400">Klassifizierung</dt>
-            <dd>{LABELS[classification]}</dd>
+            <dd>{CLASSIFICATION_LABELS[classification]}</dd>
           </div>
         )}
         {savedYear != null && (
@@ -117,7 +119,7 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
       </dl>
       {isEditor && (
         <div className="mt-4 pt-3 border-t border-slate-600 space-y-2">
-          <p className="text-slate-400 text-xs">Klassifizierung setzen:</p>
+          <p className="text-slate-400 text-xs">Stufe wählen (1 = schönster Stuck … 5 = entstuckt):</p>
           <ClassificationButtons
             onClassify={(c) => setClassification(storageKey, c, undefined, building.geometry)}
             activeClassification={classification}
@@ -134,7 +136,9 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
                 value={yearInput}
                 onChange={(e) => setYearInput(e.target.value)}
                 onBlur={commitYear}
-                onKeyDown={(e) => { if (e.key === 'Enter') commitYear() }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitYear()
+                }}
                 className="w-full px-2 py-1 rounded text-sm bg-slate-600 text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
               />
             </div>

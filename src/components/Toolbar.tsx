@@ -1,12 +1,24 @@
 import { useState } from 'react'
 import type { AppMode } from '../types'
+import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
+import { CLASSIFICATION_HEX, CLASSIFICATION_ORDER, CLASSIFICATION_SHORT } from '../classificationLabels'
 
 export interface FilterState {
-  showGreen: boolean
-  showYellow: boolean
-  showRed: boolean
+  showStuckPerfekt: boolean
+  showStuckSchoen: boolean
+  showStuckMittel: boolean
+  showStuckTeilweise: boolean
+  showEntstuckt: boolean
   showUnclassified: boolean
+}
+
+const FILTER_KEY: Record<Exclude<BuildingClassification, null>, keyof FilterState> = {
+  stuck_perfekt: 'showStuckPerfekt',
+  stuck_schoen: 'showStuckSchoen',
+  stuck_mittel: 'showStuckMittel',
+  stuck_teilweise: 'showStuckTeilweise',
+  entstuckt: 'showEntstuckt',
 }
 
 interface ToolbarProps {
@@ -24,6 +36,71 @@ interface ToolbarProps {
   selectedCount: number
   onExport: () => void
   onImport: () => void
+}
+
+function ClassificationFilterToggles({
+  filters,
+  setFilter,
+}: {
+  filters: FilterState
+  setFilter: (key: keyof FilterState, value: boolean) => void
+}) {
+  return (
+    <>
+      {CLASSIFICATION_ORDER.map((cls) => {
+        const key = FILTER_KEY[cls]
+        const hex = CLASSIFICATION_HEX[cls]
+        return (
+          <label key={cls} className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters[key]}
+              onChange={(e) => setFilter(key, e.target.checked)}
+              className="rounded"
+            />
+            <span
+              className="w-3 h-3 rounded-full shrink-0 border border-slate-500/80"
+              style={{ backgroundColor: hex }}
+              aria-hidden
+            />
+            <span>{CLASSIFICATION_SHORT[cls]}</span>
+          </label>
+        )
+      })}
+    </>
+  )
+}
+
+function ClassificationFilterDots({
+  filters,
+  setFilter,
+}: {
+  filters: FilterState
+  setFilter: (key: keyof FilterState, value: boolean) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {CLASSIFICATION_ORDER.map((cls) => {
+        const key = FILTER_KEY[cls]
+        const hex = CLASSIFICATION_HEX[cls]
+        return (
+          <label key={cls} className="flex items-center gap-1 cursor-pointer" title={CLASSIFICATION_SHORT[cls]}>
+            <input
+              type="checkbox"
+              checked={filters[key]}
+              onChange={(e) => setFilter(key, e.target.checked)}
+              className="rounded"
+            />
+            <span
+              className="w-3 h-3 rounded-full shrink-0 border border-slate-500/80"
+              style={{ backgroundColor: hex }}
+              aria-hidden
+            />
+          </label>
+        )
+      })}
+    </div>
+  )
 }
 
 export default function Toolbar({
@@ -97,36 +174,7 @@ export default function Toolbar({
 
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-slate-300">Filter:</span>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={filters.showGreen}
-            onChange={(e) => setFilter('showGreen', e.target.checked)}
-            className="rounded"
-          />
-          <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" aria-hidden />
-          <span>Original</span>
-        </label>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={filters.showYellow}
-            onChange={(e) => setFilter('showYellow', e.target.checked)}
-            className="rounded"
-          />
-          <span className="w-3 h-3 rounded-full bg-yellow-500 shrink-0" aria-hidden />
-          <span>Entstuckt</span>
-        </label>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={filters.showRed}
-            onChange={(e) => setFilter('showRed', e.target.checked)}
-            className="rounded"
-          />
-          <span className="w-3 h-3 rounded-full bg-red-500 shrink-0" aria-hidden />
-          <span>Nicht mehr da</span>
-        </label>
+        <ClassificationFilterToggles filters={filters} setFilter={setFilter} />
         <label className="flex items-center gap-1.5 cursor-pointer">
           <input
             type="checkbox"
@@ -265,21 +313,15 @@ export default function Toolbar({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-slate-300">Filter:</span>
+              <span className="text-slate-300 shrink-0">Filter:</span>
+              <ClassificationFilterDots filters={filters} setFilter={setFilter} />
               <label className="flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" checked={filters.showGreen} onChange={(e) => setFilter('showGreen', e.target.checked)} className="rounded" />
-                <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" aria-hidden />
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" checked={filters.showYellow} onChange={(e) => setFilter('showYellow', e.target.checked)} className="rounded" />
-                <span className="w-3 h-3 rounded-full bg-yellow-500 shrink-0" aria-hidden />
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" checked={filters.showRed} onChange={(e) => setFilter('showRed', e.target.checked)} className="rounded" />
-                <span className="w-3 h-3 rounded-full bg-red-500 shrink-0" aria-hidden />
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" checked={filters.showUnclassified} onChange={(e) => setFilter('showUnclassified', e.target.checked)} className="rounded" />
+                <input
+                  type="checkbox"
+                  checked={filters.showUnclassified}
+                  onChange={(e) => setFilter('showUnclassified', e.target.checked)}
+                  className="rounded"
+                />
                 <span className="w-3 h-3 rounded-full bg-slate-400 shrink-0" aria-hidden />
               </label>
             </div>

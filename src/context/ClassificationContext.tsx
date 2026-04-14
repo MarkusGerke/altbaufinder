@@ -8,12 +8,13 @@ import {
   type ReactNode,
 } from 'react'
 import type { BuildingClassification, ClassificationEntry } from '../types'
-import { loadClassifications, saveClassifications } from '../store/classificationStore'
+import { loadClassifications, migrateLegacyClassification, saveClassifications } from '../store/classificationStore'
 import {
   fetchClassifications,
   saveClassification as apiSaveClassification,
   deleteClassification as apiDeleteClassification,
 } from '../services/classificationApi'
+import { useAuth } from './AuthContext'
 
 type ClassificationState = Record<string, ClassificationEntry>
 
@@ -33,6 +34,7 @@ interface ClassificationContextValue {
 const ClassificationContext = createContext<ClassificationContextValue | null>(null)
 
 export function ClassificationProvider({ children }: { children: ReactNode }) {
+  const { refreshMe, isLoggedIn } = useAuth()
   const [classifications, setClassifications] = useState<ClassificationState>(() =>
     loadClassifications()
   )
@@ -44,10 +46,17 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
     fetchClassifications()
       .then((remote) => {
         const local = loadClassifications()
-        const merged = { ...remote }
+        const normalizedRemote: ClassificationState = {}
+        for (const [id, entry] of Object.entries(remote)) {
+          const n = migrateLegacyClassification(entry)
+          if (n !== null) normalizedRemote[id] = n
+        }
+        const merged = { ...normalizedRemote }
         for (const [id, entry] of Object.entries(local)) {
-          if (!merged[id] || entry.lastModified > merged[id].lastModified) {
-            merged[id] = entry
+          const n = migrateLegacyClassification(entry)
+          if (n === null) continue
+          if (!merged[id] || n.lastModified > merged[id].lastModified) {
+            merged[id] = n
           }
         }
         setClassifications(merged)
@@ -119,17 +128,25 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
         for (const id of deletedIds) {
           apiDeleteClassification(id).catch(() => {})
         }
+        if (isLoggedIn) {
+          void refreshMe()
+        }
       }
 
       return current
     })
     setDirtyIds(new Set())
     setDeletedIds(new Set())
-  }, [dirtyIds, deletedIds])
+  }, [dirtyIds, deletedIds, isLoggedIn, refreshMe])
 
   const importClassifications = useCallback((data: ClassificationState) => {
-    setClassifications(data)
-    saveClassifications(data)
+    const next: ClassificationState = {}
+    for (const [id, entry] of Object.entries(data)) {
+      const n = migrateLegacyClassification(entry)
+      if (n !== null) next[id] = n
+    }
+    setClassifications(next)
+    saveClassifications(next)
     setDirtyIds(new Set())
     setDeletedIds(new Set())
   }, [])

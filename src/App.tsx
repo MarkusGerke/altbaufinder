@@ -2,21 +2,31 @@ import { useCallback, useRef, useState } from 'react'
 import MapView, { type SelectedBuildingGeo } from './components/MapView'
 import Toolbar, { type FilterState } from './components/Toolbar'
 import BuildingDetailPanel from './components/BuildingDetailPanel'
+import LegendOverlay from './components/LegendOverlay'
+import LeaderboardPanel from './components/LeaderboardPanel'
+import AuthModal from './components/AuthModal'
 import { useClassification } from './context/ClassificationContext'
+import { useAuth } from './context/AuthContext'
 import type { AppMode } from './types'
 import type { ClassificationEntry } from './types'
 import { segmentStorageKey } from './utils/segmentStorageKey'
 
 const DEFAULT_FILTERS: FilterState = {
-  showGreen: true,
-  showYellow: true,
-  showRed: true,
+  showStuckPerfekt: true,
+  showStuckSchoen: true,
+  showStuckMittel: true,
+  showStuckTeilweise: true,
+  showEntstuckt: true,
   showUnclassified: false,
 }
 
 const EXPORT_FILENAME = 'altbaufinder-classifications.json'
 
 function App() {
+  const { user, score, logout, isLoggedIn } = useAuth()
+  const [legendOpen, setLegendOpen] = useState(false)
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false)
+  const [authOpen, setAuthOpen] = useState(false)
   const [appMode, setAppMode] = useState<AppMode>('viewer')
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d')
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
@@ -84,17 +94,50 @@ function App() {
 
   return (
     <div className="w-full h-screen flex flex-col">
-      <header className="flex-shrink-0 px-4 py-2 bg-slate-800 text-white shadow flex items-center justify-between">
+      <header className="flex-shrink-0 px-4 py-2 bg-slate-800 text-white shadow flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-lg font-semibold">Altbaufinder Berlin</h1>
-        <a
-          href="https://www.openstreetmap.org/copyright"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-slate-300 hover:text-white"
-        >
-          © OpenStreetMap
-        </a>
+        <div className="flex items-center gap-2 flex-wrap text-sm">
+          <button
+            type="button"
+            onClick={() => setLegendOpen(true)}
+            className="px-2 py-1 rounded bg-slate-600 hover:bg-slate-500 text-xs"
+          >
+            Legende
+          </button>
+          <button
+            type="button"
+            onClick={() => setLeaderboardOpen(true)}
+            className="px-2 py-1 rounded bg-slate-600 hover:bg-slate-500 text-xs"
+          >
+            Highscore
+          </button>
+          {isLoggedIn ? (
+            <>
+              <span className="text-slate-300 text-xs max-w-[10rem] truncate" title={user?.email}>
+                {user?.email} · {score ?? 0} Pkt.
+              </span>
+              <button type="button" onClick={logout} className="px-2 py-1 rounded bg-slate-600 hover:bg-slate-500 text-xs">
+                Abmelden
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={() => setAuthOpen(true)} className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-xs">
+              Login / Registrieren
+            </button>
+          )}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-slate-300 hover:text-white"
+          >
+            © OSM
+          </a>
+        </div>
       </header>
+      <LegendOverlay open={legendOpen} onClose={() => setLegendOpen(false)} />
+      <LeaderboardPanel open={leaderboardOpen} onClose={() => setLeaderboardOpen(false)} />
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       <Toolbar
         appMode={appMode}
         onAppModeChange={setAppMode}

@@ -1,6 +1,23 @@
-import type { ClassificationEntry } from '../types'
+import type { BuildingClassification, ClassificationEntry } from '../types'
 
 const STORAGE_KEY = 'altbaufinder-classifications'
+
+/** Einzelnen API-/LocalStorage-Eintrag von 3er-Skala auf 5er-Skala heben. */
+export function migrateLegacyClassification(
+  entry: ClassificationEntry
+): ClassificationEntry | null {
+  const c = entry.classification as BuildingClassification | 'original' | 'altbau_entstuckt' | 'kein_altbau'
+  if (c === 'original') {
+    return { ...entry, classification: 'stuck_perfekt' }
+  }
+  if (c === 'altbau_entstuckt') {
+    return { ...entry, classification: 'stuck_teilweise' }
+  }
+  if (c === 'kein_altbau') {
+    return null
+  }
+  return entry
+}
 
 function migrateId(oldId: string): string {
   if (/^way-\d+$/.test(oldId) || /^rel-\d+$/.test(oldId)) return oldId
@@ -22,9 +39,16 @@ export function loadClassifications(): Record<string, ClassificationEntry> {
     const migrated: Record<string, ClassificationEntry> = {}
     let needsMigration = false
     for (const [id, entry] of Object.entries(parsed)) {
+      if (!entry || typeof entry !== 'object') continue
       const newId = migrateId(id)
       if (newId !== id) needsMigration = true
-      migrated[newId] = entry
+      const next = migrateLegacyClassification(entry as ClassificationEntry)
+      if (next === null) {
+        needsMigration = true
+        continue
+      }
+      if (next !== entry) needsMigration = true
+      migrated[newId] = next
     }
     if (needsMigration) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))

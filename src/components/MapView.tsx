@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { useClassification } from '../context/ClassificationContext'
 import type { ClassificationEntry } from '../types'
 import type { FilterState } from './Toolbar'
+import { CLASSIFICATION_HEX } from '../classificationLabels'
 import { getSunPosition, sunToLightPosition } from '../utils/sunPosition'
 
 const BERLIN_CENTER: [number, number] = [13.404954, 52.520008]
@@ -61,6 +62,24 @@ function tileIdToStringId(tileId: number): string {
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
 
+function classificationVisible(c: ClassificationEntry['classification'], filters: FilterState): boolean {
+  if (!c) return false
+  switch (c) {
+    case 'stuck_perfekt':
+      return filters.showStuckPerfekt
+    case 'stuck_schoen':
+      return filters.showStuckSchoen
+    case 'stuck_mittel':
+      return filters.showStuckMittel
+    case 'stuck_teilweise':
+      return filters.showStuckTeilweise
+    case 'entstuckt':
+      return filters.showEntstuckt
+    default:
+      return false
+  }
+}
+
 function buildClassificationFC(
   classifications: Record<string, ClassificationEntry>,
   filters: FilterState
@@ -68,11 +87,7 @@ function buildClassificationFC(
   const features: GeoJSON.Feature[] = []
   for (const [id, entry] of Object.entries(classifications)) {
     if (!entry.classification || !entry.geometry) continue
-    const show =
-      (entry.classification === 'original' && filters.showGreen) ||
-      (entry.classification === 'altbau_entstuckt' && filters.showYellow) ||
-      (entry.classification === 'kein_altbau' && filters.showRed)
-    if (!show) continue
+    if (!classificationVisible(entry.classification, filters)) continue
     features.push({
       type: 'Feature',
       properties: { id, classification: entry.classification },
@@ -83,10 +98,18 @@ function buildClassificationFC(
 }
 
 const OVERLAY_FILL_COLOR: maplibregl.ExpressionSpecification = [
-  'match', ['get', 'classification'],
-  'original', '#22c55e',
-  'altbau_entstuckt', '#eab308',
-  'kein_altbau', '#ef4444',
+  'match',
+  ['get', 'classification'],
+  'stuck_perfekt',
+  CLASSIFICATION_HEX.stuck_perfekt,
+  'stuck_schoen',
+  CLASSIFICATION_HEX.stuck_schoen,
+  'stuck_mittel',
+  CLASSIFICATION_HEX.stuck_mittel,
+  'stuck_teilweise',
+  CLASSIFICATION_HEX.stuck_teilweise,
+  'entstuckt',
+  CLASSIFICATION_HEX.entstuckt,
   '#94a3b8',
 ] as unknown as maplibregl.ExpressionSpecification
 

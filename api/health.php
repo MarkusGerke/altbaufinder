@@ -34,7 +34,7 @@ try {
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS classifications (
                 building_id VARCHAR(128) NOT NULL PRIMARY KEY,
-                classification ENUM('original','altbau_entstuckt','kein_altbau') NULL,
+                classification VARCHAR(32) NULL,
                 year_of_construction INT NULL,
                 geometry_json LONGTEXT NULL,
                 last_modified BIGINT NOT NULL

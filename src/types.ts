@@ -1,4 +1,10 @@
-export type BuildingClassification = 'original' | 'altbau_entstuckt' | 'kein_altbau' | null
+export type BuildingClassification =
+  | 'stuck_perfekt'
+  | 'stuck_schoen'
+  | 'stuck_mittel'
+  | 'stuck_teilweise'
+  | 'entstuckt'
+  | null
 
 export interface ClassificationEntry {
   classification: BuildingClassification

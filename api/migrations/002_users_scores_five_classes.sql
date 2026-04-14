@@ -1,10 +1,13 @@
-CREATE TABLE IF NOT EXISTS classifications (
-  building_id VARCHAR(128) NOT NULL PRIMARY KEY,
-  classification VARCHAR(32) NULL,
-  year_of_construction INT NULL,
-  geometry_json LONGTEXT NULL,
-  last_modified BIGINT NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Fünf Klassifikationswerte, Nutzer, Punkte pro markiertem Gebäude.
+-- Vor Ausführung: Backup der DB.
+
+-- Alte ENUM-Werte auf VARCHAR umstellen (falls noch ENUM)
+ALTER TABLE classifications
+  MODIFY COLUMN classification VARCHAR(32) NULL;
+
+UPDATE classifications SET classification = 'stuck_perfekt' WHERE classification = 'original';
+UPDATE classifications SET classification = 'stuck_teilweise' WHERE classification = 'altbau_entstuckt';
+UPDATE classifications SET classification = NULL WHERE classification = 'kein_altbau';
 
 CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
