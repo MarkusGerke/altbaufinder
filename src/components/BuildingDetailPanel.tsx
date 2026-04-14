@@ -65,7 +65,7 @@ function osmLinkFromId(id: string): string | null {
 }
 
 function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildingGeo; isEditor: boolean }) {
-  const { getClassification, setClassification, getYearOfConstruction, setYearOfConstruction, hasPendingChanges, saveAllPending } = useClassification()
+  const { getClassification, setClassification, getYearOfConstruction, setYearOfConstruction } = useClassification()
   const classification = getClassification(building.id)
   const savedYear = getYearOfConstruction(building.id)
   const [yearInput, setYearInput] = useState<string>(savedYear != null ? String(savedYear) : '')
@@ -137,15 +137,6 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
               />
             </div>
           )}
-          {hasPendingChanges && (
-            <button
-              type="button"
-              onClick={saveAllPending}
-              className="mt-3 w-full px-3 py-1.5 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors"
-            >
-              Speichern
-            </button>
-          )}
         </div>
       )}
     </>
@@ -153,7 +144,7 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
 }
 
 function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings: SelectedBuildingGeo[]; isEditor: boolean; onDeselectAll?: () => void }) {
-  const { setClassification, hasPendingChanges, saveAllPending } = useClassification()
+  const { setClassification } = useClassification()
 
   const classifyAll = (c: BuildingClassification) => {
     for (const b of buildings) {
@@ -169,15 +160,6 @@ function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings
         <div className="mt-4 pt-3 border-t border-slate-600 space-y-2">
           <p className="text-slate-400 text-xs">Alle klassifizieren:</p>
           <ClassificationButtons onClassify={classifyAll} />
-          {hasPendingChanges && (
-            <button
-              type="button"
-              onClick={saveAllPending}
-              className="mt-2 w-full px-3 py-1.5 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors"
-            >
-              Speichern
-            </button>
-          )}
         </div>
       )}
     </>

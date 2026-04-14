@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { AppMode } from '../types'
+import { useClassification } from '../context/ClassificationContext'
 
 export interface FilterState {
   showGreen: boolean
@@ -42,6 +43,7 @@ export default function Toolbar({
   onImport,
 }: ToolbarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const { hasPendingChanges, saveAllPending } = useClassification()
   const setFilter = (key: keyof FilterState, value: boolean) => {
     onFiltersChange({ ...filters, [key]: value })
   }
@@ -64,6 +66,15 @@ export default function Toolbar({
         >
           Editor
         </button>
+        {appMode === 'editor' && hasPendingChanges && (
+          <button
+            type="button"
+            onClick={saveAllPending}
+            className="px-2 py-1 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white"
+          >
+            Speichern
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -208,6 +219,15 @@ export default function Toolbar({
             >
               Editor
             </button>
+            {appMode === 'editor' && hasPendingChanges && (
+              <button
+                type="button"
+                onClick={saveAllPending}
+                className="px-2 py-1 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white"
+              >
+                Speichern
+              </button>
+            )}
           </div>
           <button
             type="button"
