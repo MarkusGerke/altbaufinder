@@ -1,10 +1,12 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import MapView, { type SelectedBuildingGeo } from './components/MapView'
 import Toolbar, { type FilterState } from './components/Toolbar'
 import BuildingDetailPanel from './components/BuildingDetailPanel'
 import LegendOverlay from './components/LegendOverlay'
 import LeaderboardPanel from './components/LeaderboardPanel'
+import AccountSettingsDialog from './components/AccountSettingsDialog'
 import AuthModal from './components/AuthModal'
+import PasswordResetDialog from './components/PasswordResetDialog'
 import { Button } from '@/components/ui/button'
 import { useClassification } from './context/ClassificationContext'
 import { useAuth } from './context/AuthContext'
@@ -28,6 +30,21 @@ function App() {
   const [legendOpen, setLegendOpen] = useState(false)
   const [leaderboardOpen, setLeaderboardOpen] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [passwordResetToken, setPasswordResetToken] = useState<string | null>(null)
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    const t = p.get('password-reset')
+    if (t) {
+      setPasswordResetToken(t)
+      p.delete('password-reset')
+      const q = p.toString()
+      const path = window.location.pathname
+      const hash = window.location.hash
+      window.history.replaceState({}, '', `${path}${q ? `?${q}` : ''}${hash}`)
+    }
+  }, [])
   const [appMode, setAppMode] = useState<AppMode>('viewer')
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d')
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
@@ -109,6 +126,9 @@ function App() {
               <span className="text-muted-foreground max-w-[10rem] truncate text-xs" title={user?.email}>
                 {user?.email} · {score ?? 0} Pkt.
               </span>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAccountOpen(true)}>
+                Konto
+              </Button>
               <Button type="button" variant="secondary" size="sm" onClick={logout}>
                 Abmelden
               </Button>
@@ -131,6 +151,12 @@ function App() {
       <LegendOverlay open={legendOpen} onClose={() => setLegendOpen(false)} />
       <LeaderboardPanel open={leaderboardOpen} onClose={() => setLeaderboardOpen(false)} />
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      <AccountSettingsDialog open={accountOpen} onClose={() => setAccountOpen(false)} />
+      <PasswordResetDialog
+        open={passwordResetToken !== null}
+        token={passwordResetToken ?? ''}
+        onClose={() => setPasswordResetToken(null)}
+      />
       <Toolbar
         appMode={appMode}
         onAppModeChange={setAppMode}

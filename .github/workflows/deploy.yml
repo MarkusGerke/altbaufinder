@@ -48,8 +48,11 @@ jobs:
       - name: API für Upload (ohne config.php)
         run: |
           mkdir -p api-release/migrations api-release/auth
-          cp api/classifications.php api/db.php api/schema.sql api/config.example.php api/health.php api/jwt.php api/auth_helpers.php api/leaderboard.php api-release/
-          cp api/auth/register.php api/auth/login.php api/auth/me.php api-release/auth/
+          cp api/classifications.php api/db.php api/schema.sql api/config.example.php api/health.php api/jwt.php api/auth_helpers.php api/leaderboard.php api/mail_send.php api-release/
+          cp api/auth/register.php api/auth/login.php api/auth/me.php \
+            api/auth/password-request-reset.php api/auth/password-reset.php \
+            api/auth/account-update-email.php api/auth/account-update-password.php api/auth/account-delete.php \
+            api-release/auth/
           cp api/migrations/*.sql api-release/migrations/
 
       - name: Deploy per SSH (rsync)

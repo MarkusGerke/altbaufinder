@@ -20,4 +20,9 @@ return [
      * Alternativ ohne Eintrag hier: Umgebungsvariable ALTBAUFINDER_JWT_SECRET oder JWT_SECRET setzen.
      */
     'jwt_secret'  => 'HIER_LANGEN_ZUFALLSSTRING_EINTRAGEN',
+    /**
+     * Passwort vergessen: Absender für mail() und Basis-URL der App (ohne / am Ende).
+     */
+    'mail_from'      => 'noreply@deine-domain.de',
+    'public_app_url' => 'https://deine-domain.de',
 ];

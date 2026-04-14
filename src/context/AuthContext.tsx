@@ -7,7 +7,17 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { AUTH_TOKEN_KEY, authLogin, authMe, authRegister, type AuthUser } from '../services/authApi'
+import {
+  AUTH_TOKEN_KEY,
+  authLogin,
+  authMe,
+  authRegister,
+  deleteAccountApi,
+  requestPasswordReset,
+  updateAccountEmail,
+  updateAccountPassword,
+  type AuthUser,
+} from '../services/authApi'
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -19,6 +29,10 @@ interface AuthContextValue {
   logout: () => void
   refreshMe: () => Promise<void>
   isLoggedIn: boolean
+  requestPasswordReset: (email: string) => Promise<void>
+  updateEmail: (currentPassword: string, newEmail: string) => Promise<void>
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
+  deleteAccount: (password: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -112,6 +126,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearError = useCallback(() => setError(null), [])
 
+  const requestPasswordResetFn = useCallback(async (email: string) => {
+    setError(null)
+    await requestPasswordReset(email)
+  }, [])
+
+  const updateEmail = useCallback(
+    async (currentPassword: string, newEmail: string) => {
+      if (!token) throw new Error('Nicht angemeldet')
+      setError(null)
+      const u = await updateAccountEmail(token, currentPassword, newEmail)
+      setUser(u)
+    },
+    [token]
+  )
+
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      if (!token) throw new Error('Nicht angemeldet')
+      setError(null)
+      await updateAccountPassword(token, currentPassword, newPassword)
+    },
+    [token]
+  )
+
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      if (!token) throw new Error('Nicht angemeldet')
+      setError(null)
+      await deleteAccountApi(token, password)
+      try {
+        localStorage.removeItem(AUTH_TOKEN_KEY)
+      } catch {
+        /* ignore */
+      }
+      setToken(null)
+      setUser(null)
+      setScore(null)
+    },
+    [token]
+  )
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -123,8 +178,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       refreshMe,
       isLoggedIn: !!user && !!token,
+      requestPasswordReset: requestPasswordResetFn,
+      updateEmail,
+      changePassword,
+      deleteAccount,
     }),
-    [user, score, error, clearError, login, register, logout, refreshMe, token]
+    [
+      user,
+      score,
+      error,
+      clearError,
+      login,
+      register,
+      logout,
+      refreshMe,
+      token,
+      requestPasswordResetFn,
+      updateEmail,
+      changePassword,
+      deleteAccount,
+    ]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

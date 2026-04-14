@@ -1,0 +1,11 @@
+---
+description: Kurze, knackige To-do-Vorlagen mit Beispielen wenn nötig (Deutsch).
+alwaysApply: true
+---
+
+# Anweisungsstil
+
+- Bei Schrittfolgen, Server-Setup, Deploy oder Konfiguration: **kurz und knackig**, keine langen Fließtexte.
+- Struktur: **nummerierte Liste** oder **Checkliste**, pro Punkt **eine klare Aktion**.
+- Wenn ein konkretes Format nötig ist (z. B. `config.php`): **Minimal-Beispiel** in einem Codeblock, Platzhalter klar benennen (`deine-domain.de`, `…`).
+- Keine überflüssigen Warnungen oder Wiederholungen; nur was nötig ist, damit es jemand **schnell abarbeiten** kann.

@@ -97,6 +97,21 @@ function ensure_marks_tables(PDO $pdo): void {
             CONSTRAINT fk_ubm_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    ensure_users_password_reset_columns($pdo);
+}
+
+/** Spalten für Passwort-zurücksetzen (bestehende Installationen per ALTER nachziehen). */
+function ensure_users_password_reset_columns(PDO $pdo): void {
+    try {
+        $pdo->exec('ALTER TABLE users ADD COLUMN password_reset_token_hash VARCHAR(64) NULL AFTER password_hash');
+    } catch (Throwable $e) {
+        // Spalte existiert vermutlich schon
+    }
+    try {
+        $pdo->exec('ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME NULL AFTER password_reset_token_hash');
+    } catch (Throwable $e) {
+        // Spalte existiert vermutlich schon
+    }
 }
 
 function mask_email(string $email): string {

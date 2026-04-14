@@ -72,3 +72,71 @@ export async function fetchLeaderboard(): Promise<LeaderboardRow[]> {
   if (!res.ok) return []
   return data.leaderboard ?? []
 }
+
+function jsonAuthHeaders(token: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  }
+}
+
+/** Passwort vergessen — immer neutrale Server-Antwort bei Erfolg. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/password-request-reset.php`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  const data = await readJsonResponse<{ ok?: boolean; message?: string; error?: string; detail?: string }>(res)
+  if (!res.ok) throwAuthError(res, data, 'Anfrage fehlgeschlagen')
+}
+
+export async function completePasswordReset(resetToken: string, password: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/password-reset.php`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: resetToken, password }),
+  })
+  const data = await readJsonResponse<{ ok?: boolean; message?: string; error?: string; detail?: string }>(res)
+  if (!res.ok) throwAuthError(res, data, 'Passwort konnte nicht gesetzt werden')
+}
+
+export async function updateAccountEmail(
+  token: string,
+  currentPassword: string,
+  newEmail: string
+): Promise<AuthUser> {
+  const res = await fetch(`${API_BASE}/auth/account-update-email.php`, {
+    method: 'POST',
+    headers: jsonAuthHeaders(token),
+    body: JSON.stringify({ currentPassword, newEmail }),
+  })
+  const data = await readJsonResponse<{ error?: string; detail?: string; user?: AuthUser }>(res)
+  if (!res.ok) throwAuthError(res, data, 'E-Mail konnte nicht geändert werden')
+  if (!data.user) throw new Error('Ungültige Server-Antwort')
+  return data.user
+}
+
+export async function updateAccountPassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/account-update-password.php`, {
+    method: 'POST',
+    headers: jsonAuthHeaders(token),
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
+  const data = await readJsonResponse<{ error?: string; detail?: string; ok?: boolean }>(res)
+  if (!res.ok) throwAuthError(res, data, 'Passwort konnte nicht geändert werden')
+}
+
+export async function deleteAccountApi(token: string, password: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/account-delete.php`, {
+    method: 'POST',
+    headers: jsonAuthHeaders(token),
+    body: JSON.stringify({ password }),
+  })
+  const data = await readJsonResponse<{ error?: string; detail?: string; ok?: boolean }>(res)
+  if (!res.ok) throwAuthError(res, data, 'Konto konnte nicht gelöscht werden')
+}
