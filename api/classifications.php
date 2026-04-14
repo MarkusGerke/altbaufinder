@@ -22,14 +22,22 @@ try {
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
-    $stmt = $pdo->query('SELECT building_id, classification, year_of_construction, last_modified FROM classifications');
+    $stmt = $pdo->query(
+        'SELECT building_id, classification, year_of_construction, last_modified, geometry_json FROM classifications'
+    );
     $rows = $stmt->fetchAll();
     $result = [];
     foreach ($rows as $row) {
+        $geom = null;
+        if (!empty($row['geometry_json'])) {
+            $decoded = json_decode($row['geometry_json'], true);
+            $geom = is_array($decoded) ? $decoded : null;
+        }
         $result[$row['building_id']] = [
-            'classification'      => $row['classification'],
-            'yearOfConstruction'  => $row['year_of_construction'] !== null ? (int) $row['year_of_construction'] : null,
-            'lastModified'        => (int) $row['last_modified'],
+            'classification'       => $row['classification'],
+            'yearOfConstruction'   => $row['year_of_construction'] !== null ? (int) $row['year_of_construction'] : null,
+            'lastModified'         => (int) $row['last_modified'],
+            'geometry'             => $geom,
         ];
     }
     echo json_encode($result);
@@ -45,9 +53,9 @@ if ($method === 'POST') {
     }
 
     $stmt = $pdo->prepare(
-        'INSERT INTO classifications (building_id, classification, year_of_construction, last_modified)
-         VALUES (:id, :cls, :year, :ts)
-         ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, last_modified = :ts2'
+        'INSERT INTO classifications (building_id, classification, year_of_construction, geometry_json, last_modified)
+         VALUES (:id, :cls, :year, :geom, :ts)
+         ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, geometry_json = :geom2, last_modified = :ts2'
     );
 
     $saved = [];
@@ -55,13 +63,19 @@ if ($method === 'POST') {
         $cls  = $entry['classification'] ?? null;
         $year = isset($entry['yearOfConstruction']) ? (int) $entry['yearOfConstruction'] : null;
         $ts   = isset($entry['lastModified']) ? (int) $entry['lastModified'] : (int) (microtime(true) * 1000);
+        $geomJson = null;
+        if (isset($entry['geometry']) && is_array($entry['geometry'])) {
+            $geomJson = json_encode($entry['geometry'], JSON_UNESCAPED_UNICODE);
+        }
         $stmt->execute([
             ':id'    => $buildingId,
             ':cls'   => $cls,
             ':year'  => $year,
+            ':geom'  => $geomJson,
             ':ts'    => $ts,
             ':cls2'  => $cls,
             ':year2' => $year,
+            ':geom2' => $geomJson,
             ':ts2'   => $ts,
         ]);
         $saved[$buildingId] = true;

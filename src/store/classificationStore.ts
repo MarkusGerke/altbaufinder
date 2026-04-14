@@ -4,6 +4,7 @@ const STORAGE_KEY = 'altbaufinder-classifications'
 
 function migrateId(oldId: string): string {
   if (/^way-\d+$/.test(oldId) || /^rel-\d+$/.test(oldId)) return oldId
+  if (/^way-\d+#[0-9a-f]+$/.test(oldId) || /^rel-\d+#[0-9a-f]+$/.test(oldId)) return oldId
   const waySlash = oldId.match(/^way\/(\d+)$/)
   if (waySlash) return `way-${waySlash[1]}`
   const relSlash = oldId.match(/^relation\/(\d+)$/)

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
 import type { SelectedBuildingGeo } from './MapView'
+import { segmentStorageKey } from '../utils/segmentStorageKey'
 
 interface BuildingDetailPanelProps {
   buildings: SelectedBuildingGeo[]
@@ -66,13 +67,14 @@ function osmLinkFromId(id: string): string | null {
 
 function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildingGeo; isEditor: boolean }) {
   const { getClassification, setClassification, getYearOfConstruction, setYearOfConstruction } = useClassification()
-  const classification = getClassification(building.id)
-  const savedYear = getYearOfConstruction(building.id)
+  const storageKey = useMemo(() => segmentStorageKey(building.id, building.geometry), [building.id, building.geometry])
+  const classification = getClassification(storageKey)
+  const savedYear = getYearOfConstruction(storageKey)
   const [yearInput, setYearInput] = useState<string>(savedYear != null ? String(savedYear) : '')
 
   useEffect(() => {
     setYearInput(savedYear != null ? String(savedYear) : '')
-  }, [building.id, savedYear])
+  }, [storageKey, savedYear])
 
   const renderHeight = building.properties['render_height'] as number | undefined
   const height = renderHeight != null ? `${renderHeight} m` : '–'
@@ -80,7 +82,7 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
 
   const commitYear = () => {
     const n = parseInt(yearInput, 10)
-    setYearOfConstruction(building.id, isNaN(n) ? null : n)
+    setYearOfConstruction(storageKey, isNaN(n) ? null : n)
   }
 
   return (
@@ -117,7 +119,7 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
         <div className="mt-4 pt-3 border-t border-slate-600 space-y-2">
           <p className="text-slate-400 text-xs">Klassifizierung setzen:</p>
           <ClassificationButtons
-            onClassify={(c) => setClassification(building.id, c, undefined, building.geometry)}
+            onClassify={(c) => setClassification(storageKey, c, undefined, building.geometry)}
             activeClassification={classification}
           />
           {classification && (
@@ -148,7 +150,7 @@ function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings
 
   const classifyAll = (c: BuildingClassification) => {
     for (const b of buildings) {
-      setClassification(b.id, c, undefined, b.geometry)
+      setClassification(segmentStorageKey(b.id, b.geometry), c, undefined, b.geometry)
     }
     onDeselectAll?.()
   }

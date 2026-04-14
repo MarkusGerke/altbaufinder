@@ -50,6 +50,15 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
             merged[id] = entry
           }
         }
+        let withGeom = 0
+        let withoutGeom = 0
+        for (const e of Object.values(merged)) {
+          if (e.geometry && typeof e.geometry === 'object') withGeom++
+          else withoutGeom++
+        }
+        // #region agent log
+        fetch('http://127.0.0.1:7858/ingest/56e6680e-87b3-4f0d-9b35-c2b920d9c2ed',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c37930'},body:JSON.stringify({sessionId:'c37930',location:'ClassificationContext:fetchMerged',message:'after API merge',data:{total:Object.keys(merged).length,withGeom,withoutGeom},timestamp:Date.now(),hypothesisId:'H1',runId:'segment-geom'})}).catch(()=>{});
+        // #endregion
         setClassifications(merged)
         saveClassifications(merged)
       })
@@ -58,6 +67,10 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
 
   const setClassification = useCallback((buildingId: string, classification: BuildingClassification, yearOfConstruction?: number | null, geometry?: GeoJSON.Geometry | null) => {
     setClassifications((prev) => {
+      const hadExisting = !!prev[buildingId]
+      // #region agent log
+      fetch('http://127.0.0.1:7858/ingest/56e6680e-87b3-4f0d-9b35-c2b920d9c2ed',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c37930'},body:JSON.stringify({sessionId:'c37930',location:'ClassificationContext:setClassification',message:'write',data:{key:buildingId,hasHash:buildingId.includes('#'),hadExisting,classification},timestamp:Date.now(),hypothesisId:'H2',runId:'segment-geom'})}).catch(()=>{});
+      // #endregion
       const next = { ...prev }
       if (classification === null) {
         delete next[buildingId]
