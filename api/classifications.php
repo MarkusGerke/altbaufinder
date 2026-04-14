@@ -19,6 +19,16 @@ try {
     exit;
 }
 
+// Auto-Migration: geometry_json-Spalte + breitere building_id anlegen, falls noch nicht vorhanden.
+try {
+    $cols = $pdo->query("SHOW COLUMNS FROM classifications LIKE 'geometry_json'")->fetchAll();
+    if (count($cols) === 0) {
+        $pdo->exec("ALTER TABLE classifications MODIFY COLUMN building_id VARCHAR(128) NOT NULL, ADD COLUMN geometry_json LONGTEXT NULL AFTER year_of_construction");
+    }
+} catch (Exception $e) {
+    // Nicht kritisch – Spalte existiert möglicherweise schon oder Rechte fehlen.
+}
+
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
