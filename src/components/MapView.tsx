@@ -93,6 +93,18 @@ interface MapViewProps {
   selectedBuildings: SelectedBuildingGeo[]
 }
 
+function selectionFeatureCollection(selected: SelectedBuildingGeo[]): GeoJSON.FeatureCollection {
+  if (selected.length === 0) return EMPTY_FC
+  return {
+    type: 'FeatureCollection',
+    features: selected.map((b) => ({
+      type: 'Feature' as const,
+      properties: { id: b.id },
+      geometry: b.geometry,
+    })),
+  }
+}
+
 export default function MapView({ onBuildingClick, filters, viewMode, whiteMode, selectedBuildings }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -105,6 +117,8 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
   whiteModeRef.current = whiteMode
   const onBuildingClickRef = useRef(onBuildingClick)
   onBuildingClickRef.current = onBuildingClick
+  const selectedBuildingsRef = useRef(selectedBuildings)
+  selectedBuildingsRef.current = selectedBuildings
 
   useEffect(() => {
     if (!mapContainerRef.current) return
@@ -258,6 +272,13 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
       map.on('mouseleave', 'buildings-fill', () => { map.getCanvas().style.cursor = 'default' })
       map.on('mouseenter', 'buildings-extrusion', () => { map.getCanvas().style.cursor = 'pointer' })
       map.on('mouseleave', 'buildings-extrusion', () => { map.getCanvas().style.cursor = 'default' })
+
+      // API kann Klassifizierungen liefern, bevor dieser Handler lief — der React-Effekt sieht die Quelle noch nicht.
+      // Einmal synchron anwenden, sobald Quellen existieren.
+      const clsSrc = map.getSource(CLASSIFICATION_SOURCE) as maplibregl.GeoJSONSource
+      clsSrc.setData(buildClassificationFC(classificationsRef.current, filtersRef.current))
+      const selSrc = map.getSource(SELECTION_SOURCE) as maplibregl.GeoJSONSource
+      selSrc.setData(selectionFeatureCollection(selectedBuildingsRef.current))
     })
 
     mapRef.current = map
@@ -278,19 +299,7 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     const map = mapRef.current
     const src = map?.getSource(SELECTION_SOURCE) as maplibregl.GeoJSONSource | undefined
     if (!src) return
-    if (selectedBuildings.length === 0) {
-      src.setData(EMPTY_FC)
-    } else {
-      const fc: GeoJSON.FeatureCollection = {
-        type: 'FeatureCollection',
-        features: selectedBuildings.map((b) => ({
-          type: 'Feature' as const,
-          properties: { id: b.id },
-          geometry: b.geometry,
-        })),
-      }
-      src.setData(fc)
-    }
+    src.setData(selectionFeatureCollection(selectedBuildings))
   }, [selectedBuildings])
 
   useEffect(() => {
