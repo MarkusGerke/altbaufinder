@@ -19,27 +19,31 @@ try {
     exit;
 }
 
-// Auto-Migration: geometry_json-Spalte + breitere building_id anlegen, falls noch nicht vorhanden.
+// Prüfe, ob geometry_json-Spalte vorhanden ist; wenn nicht, versuche Auto-Migration.
+$hasGeomCol = false;
 try {
     $cols = $pdo->query("SHOW COLUMNS FROM classifications LIKE 'geometry_json'")->fetchAll();
-    if (count($cols) === 0) {
+    $hasGeomCol = count($cols) > 0;
+    if (!$hasGeomCol) {
         $pdo->exec("ALTER TABLE classifications MODIFY COLUMN building_id VARCHAR(128) NOT NULL, ADD COLUMN geometry_json LONGTEXT NULL AFTER year_of_construction");
+        $hasGeomCol = true;
     }
 } catch (Exception $e) {
-    // Nicht kritisch – Spalte existiert möglicherweise schon oder Rechte fehlen.
+    // ALTER schlug fehl (z. B. fehlende Rechte) — weiter ohne geometry_json.
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
-    $stmt = $pdo->query(
-        'SELECT building_id, classification, year_of_construction, last_modified, geometry_json FROM classifications'
-    );
+    $sql = $hasGeomCol
+        ? 'SELECT building_id, classification, year_of_construction, last_modified, geometry_json FROM classifications'
+        : 'SELECT building_id, classification, year_of_construction, last_modified FROM classifications';
+    $stmt = $pdo->query($sql);
     $rows = $stmt->fetchAll();
     $result = [];
     foreach ($rows as $row) {
         $geom = null;
-        if (!empty($row['geometry_json'])) {
+        if ($hasGeomCol && !empty($row['geometry_json'])) {
             $decoded = json_decode($row['geometry_json'], true);
             $geom = is_array($decoded) ? $decoded : null;
         }
@@ -62,32 +66,53 @@ if ($method === 'POST') {
         exit;
     }
 
-    $stmt = $pdo->prepare(
-        'INSERT INTO classifications (building_id, classification, year_of_construction, geometry_json, last_modified)
-         VALUES (:id, :cls, :year, :geom, :ts)
-         ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, geometry_json = :geom2, last_modified = :ts2'
-    );
+    if ($hasGeomCol) {
+        $stmt = $pdo->prepare(
+            'INSERT INTO classifications (building_id, classification, year_of_construction, geometry_json, last_modified)
+             VALUES (:id, :cls, :year, :geom, :ts)
+             ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, geometry_json = :geom2, last_modified = :ts2'
+        );
+    } else {
+        $stmt = $pdo->prepare(
+            'INSERT INTO classifications (building_id, classification, year_of_construction, last_modified)
+             VALUES (:id, :cls, :year, :ts)
+             ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, last_modified = :ts2'
+        );
+    }
 
     $saved = [];
     foreach ($input as $buildingId => $entry) {
         $cls  = $entry['classification'] ?? null;
         $year = isset($entry['yearOfConstruction']) ? (int) $entry['yearOfConstruction'] : null;
         $ts   = isset($entry['lastModified']) ? (int) $entry['lastModified'] : (int) (microtime(true) * 1000);
-        $geomJson = null;
-        if (isset($entry['geometry']) && is_array($entry['geometry'])) {
-            $geomJson = json_encode($entry['geometry'], JSON_UNESCAPED_UNICODE);
+
+        if ($hasGeomCol) {
+            $geomJson = null;
+            if (isset($entry['geometry']) && is_array($entry['geometry'])) {
+                $geomJson = json_encode($entry['geometry'], JSON_UNESCAPED_UNICODE);
+            }
+            $stmt->execute([
+                ':id'    => $buildingId,
+                ':cls'   => $cls,
+                ':year'  => $year,
+                ':geom'  => $geomJson,
+                ':ts'    => $ts,
+                ':cls2'  => $cls,
+                ':year2' => $year,
+                ':geom2' => $geomJson,
+                ':ts2'   => $ts,
+            ]);
+        } else {
+            $stmt->execute([
+                ':id'    => $buildingId,
+                ':cls'   => $cls,
+                ':year'  => $year,
+                ':ts'    => $ts,
+                ':cls2'  => $cls,
+                ':year2' => $year,
+                ':ts2'   => $ts,
+            ]);
         }
-        $stmt->execute([
-            ':id'    => $buildingId,
-            ':cls'   => $cls,
-            ':year'  => $year,
-            ':geom'  => $geomJson,
-            ':ts'    => $ts,
-            ':cls2'  => $cls,
-            ':year2' => $year,
-            ':geom2' => $geomJson,
-            ':ts2'   => $ts,
-        ]);
         $saved[$buildingId] = true;
     }
     echo json_encode(['saved' => count($saved)]);
