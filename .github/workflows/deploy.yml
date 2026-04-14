@@ -1,17 +1,15 @@
 # Push auf main → Build + optional Deploy (SSH und/oder FTP).
 #
-# Secrets (Repository → Settings → Secrets → Actions):
+# Secrets (Repository → Settings → Secrets and variables → Actions):
 #
-# SSH (rsync, empfohlen wenn Deploy-Key auf dem Server liegt):
+# SSH (rsync):
 #   SSH_PRIVATE_KEY, SSH_HOST, SSH_USER, REMOTE_WEBROOT (absolut, mit / am Ende)
 #
-# FTP (all-inkl ohne SSH-Key – reicht oft FTP-Zugang):
-#   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_REMOTE_DIR
-#   FTP_REMOTE_DIR = Ordner der Subdomain relativ zum FTP-Root, z. B. altbaufinder.markusgerke.com (ohne führenden Slash)
-#   FTP nutzt fest ftps:21 (all-inkl üblich). Sonst Workflow-Zeilen protocol/port anpassen.
+# FTP:
+#   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_REMOTE_DIR (ohne führenden Slash)
 #
-# Wenn BEIDE Varianten konfiguriert sind, laufen beide Jobs (doppeltes Deploy möglich).
-# Nur SSH: alle FTP-* Secrets löschen. Nur FTP: alle SSH-* Secrets löschen.
+# Hinweis: GitHub erlaubt `secrets` nicht in job.if — Bedingungen nur bei einzelnen Steps.
+# Nur SSH: FTP-* Secrets löschen. Nur FTP: SSH-* Secrets löschen.
 
 name: Deploy
 
@@ -28,7 +26,6 @@ permissions:
 
 jobs:
   build:
-    # Nur echter Push auf main (keine PR-Head-Branches / keine Doppeltrigger)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -59,9 +56,8 @@ jobs:
           name: api-release
           path: api-release
 
-  deploy-ssh:
+  deploy:
     needs: build
-    if: ${{ secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_HOST != '' && secrets.SSH_USER != '' && secrets.REMOTE_WEBROOT != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -74,43 +70,23 @@ jobs:
           name: api-release
           path: api-release
 
-      - name: SSH vorbereiten
+      - name: Deploy per SSH (rsync)
+        if: ${{ secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_HOST != '' && secrets.SSH_USER != '' && secrets.REMOTE_WEBROOT != '' }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-
-      - name: Rsync dist → Webroot
-        run: |
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
             dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_WEBROOT }}/"
-
-      - name: Rsync api → Webroot/api
-        run: |
           rsync -avz \
             -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
             api-release/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_WEBROOT }}/api/"
 
-  deploy-ftp:
-    needs: build
-    if: ${{ secrets.FTP_SERVER != '' && secrets.FTP_USERNAME != '' && secrets.FTP_PASSWORD != '' && secrets.FTP_REMOTE_DIR != '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: api-release
-          path: api-release
-
-      # all-inkl: oft explizites FTPS auf Port 21 — bei Fehlern im Log ggf. auf protocol: ftp wechseln
       - name: FTP Upload (Frontend dist/)
+        if: ${{ secrets.FTP_SERVER != '' && secrets.FTP_USERNAME != '' && secrets.FTP_PASSWORD != '' && secrets.FTP_REMOTE_DIR != '' }}
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -124,6 +100,7 @@ jobs:
           log-level: minimal
 
       - name: FTP Upload (API)
+        if: ${{ secrets.FTP_SERVER != '' && secrets.FTP_USERNAME != '' && secrets.FTP_PASSWORD != '' && secrets.FTP_REMOTE_DIR != '' }}
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.FTP_SERVER }}

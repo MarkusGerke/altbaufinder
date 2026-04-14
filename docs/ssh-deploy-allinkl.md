@@ -102,7 +102,7 @@ Wenn du früher **FTP-Secrets** angelegt hast: diese **löschen** (`FTP_SERVER`,
 git commit --allow-empty -m "test: SSH-Deploy" && git push origin main
 ```
 
-In GitHub unter **Actions** → Workflow **Deploy** prüfen: Job **deploy-ssh** soll grün sein, **deploy-ftp** darf nicht laufen (keine FTP-Secrets).
+In GitHub unter **Actions** → Workflow **Deploy** prüfen: Job **deploy** soll grün sein; der Schritt **„Deploy per SSH (rsync)“** muss durchlaufen. **FTP**-Schritte bleiben ausgegraut, wenn keine FTP-Secrets gesetzt sind.
 
 ---
 
