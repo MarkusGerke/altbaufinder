@@ -52,7 +52,7 @@ Repository: [github.com/MarkusGerke/altbaufinder](https://github.com/MarkusGerke
 ### Was automatisch läuft
 
 - **CI** (`.github/workflows/ci.yml`): bei **Pull Requests** gegen `main` (und manuell „Run workflow“) → `npm ci`, Lint, Production-Build. Push auf `main` löst nur **Deploy** aus (ein Build).
-- **Deploy** (`.github/workflows/deploy.yml`): bei Push auf `main` → Build, dann **optional** Upload per **SSH/rsync** und/oder **FTP** — je nachdem, welche Secrets gesetzt sind.
+- **Deploy** (`.github/workflows/deploy.yml`): bei Push auf `main` → Build, dann **optional** Upload per **SSH/rsync** und/oder **FTP** — je nachdem, welche Secrets gesetzt sind. **Nur SSH:** siehe [docs/ssh-deploy-allinkl.md](docs/ssh-deploy-allinkl.md) und FTP-Secrets in GitHub entfernen.
 - **Dependabot** (`.github/dependabot.yml`): wöchentlich npm-, monatlich GitHub-Actions-Updates als PRs.
 
 ### Lokale Kurzbefehle

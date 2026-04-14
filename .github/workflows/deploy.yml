@@ -11,7 +11,7 @@
 #   FTP nutzt fest ftps:21 (all-inkl üblich). Sonst Workflow-Zeilen protocol/port anpassen.
 #
 # Wenn BEIDE Varianten konfiguriert sind, laufen beide Jobs (doppeltes Deploy möglich).
-# Nur eine Variante Secrets setzen, wenn du nicht beides willst.
+# Nur SSH: alle FTP-* Secrets löschen. Nur FTP: alle SSH-* Secrets löschen.
 
 name: Deploy
 
