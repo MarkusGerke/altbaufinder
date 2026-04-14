@@ -11,6 +11,7 @@ interface BuildingDetailPanelProps {
   buildings: SelectedBuilding[]
   onClose: () => void
   isEditor: boolean
+  onDeselectAll?: () => void
 }
 
 const LABELS: Record<Exclude<BuildingClassification, null>, string> = {
@@ -60,8 +61,15 @@ function ClassificationButtons({
   )
 }
 
+function osmLinkFromId(id: string): string | null {
+  const m = id.match(/^(way|rel)-(\d+)$/)
+  if (!m) return null
+  const type = m[1] === 'rel' ? 'relation' : 'way'
+  return `https://www.openstreetmap.org/${type}/${m[2]}`
+}
+
 function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuilding; isEditor: boolean }) {
-  const { getClassification, setClassification, getYearOfConstruction, setYearOfConstruction } = useClassification()
+  const { getClassification, setClassification, getYearOfConstruction, setYearOfConstruction, hasPendingChanges, saveAllPending } = useClassification()
   const classification = getClassification(building.id)
   const savedYear = getYearOfConstruction(building.id)
   const [yearInput, setYearInput] = useState<string>(savedYear != null ? String(savedYear) : '')
@@ -70,11 +78,9 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
     setYearInput(savedYear != null ? String(savedYear) : '')
   }, [building.id, savedYear])
 
-  const street = (building.properties['addr:street'] as string) ?? '–'
-  const housenumber = (building.properties['addr:housenumber'] as string) ?? '–'
-  const h = building.properties['height'] as string | undefined
-  const levels = building.properties['building:levels'] as number | string | undefined
-  const height = h ? `${h}` : levels != null ? `${levels} Etagen` : '–'
+  const renderHeight = building.properties['render_height'] as number | undefined
+  const height = renderHeight != null ? `${renderHeight} m` : '–'
+  const osmLink = osmLinkFromId(building.id)
 
   const commitYear = () => {
     const n = parseInt(yearInput, 10)
@@ -85,12 +91,14 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
     <>
       <dl className="space-y-1 text-sm">
         <div>
-          <dt className="text-slate-400">Straße</dt>
-          <dd>{street}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-400">Hausnummer</dt>
-          <dd>{housenumber}</dd>
+          <dt className="text-slate-400">ID</dt>
+          <dd>
+            {osmLink ? (
+              <a href={osmLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+                {building.id}
+              </a>
+            ) : building.id}
+          </dd>
         </div>
         <div>
           <dt className="text-slate-400">Höhe</dt>
@@ -133,19 +141,29 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
               />
             </div>
           )}
+          {hasPendingChanges && (
+            <button
+              type="button"
+              onClick={saveAllPending}
+              className="mt-3 w-full px-3 py-1.5 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+            >
+              Speichern
+            </button>
+          )}
         </div>
       )}
     </>
   )
 }
 
-function MultiBuildingDetail({ buildings, isEditor }: { buildings: SelectedBuilding[]; isEditor: boolean }) {
-  const { setClassification } = useClassification()
+function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings: SelectedBuilding[]; isEditor: boolean; onDeselectAll?: () => void }) {
+  const { setClassification, hasPendingChanges, saveAllPending } = useClassification()
 
   const classifyAll = (c: BuildingClassification) => {
     for (const b of buildings) {
       setClassification(b.id, c)
     }
+    onDeselectAll?.()
   }
 
   return (
@@ -155,13 +173,22 @@ function MultiBuildingDetail({ buildings, isEditor }: { buildings: SelectedBuild
         <div className="mt-4 pt-3 border-t border-slate-600 space-y-2">
           <p className="text-slate-400 text-xs">Alle klassifizieren:</p>
           <ClassificationButtons onClassify={classifyAll} />
+          {hasPendingChanges && (
+            <button
+              type="button"
+              onClick={saveAllPending}
+              className="mt-2 w-full px-3 py-1.5 rounded text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+            >
+              Speichern
+            </button>
+          )}
         </div>
       )}
     </>
   )
 }
 
-export default function BuildingDetailPanel({ buildings, onClose, isEditor }: BuildingDetailPanelProps) {
+export default function BuildingDetailPanel({ buildings, onClose, isEditor, onDeselectAll }: BuildingDetailPanelProps) {
   const isSingle = buildings.length === 1
 
   return (
@@ -182,7 +209,7 @@ export default function BuildingDetailPanel({ buildings, onClose, isEditor }: Bu
       {isSingle ? (
         <SingleBuildingDetail building={buildings[0]} isEditor={isEditor} />
       ) : (
-        <MultiBuildingDetail buildings={buildings} isEditor={isEditor} />
+        <MultiBuildingDetail buildings={buildings} isEditor={isEditor} onDeselectAll={onDeselectAll} />
       )}
     </div>
   )

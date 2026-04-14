@@ -30,6 +30,8 @@ interface ClassificationContextValue {
   setYearOfConstruction: (buildingId: string, year: number | null) => void
   registerRemoveFeatureState: (fn: RemoveFeatureStateFn | null) => void
   importClassifications: (data: ClassificationState) => void
+  hasPendingChanges: boolean
+  saveAllPending: () => void
 }
 
 const ClassificationContext = createContext<ClassificationContextValue | null>(null)
@@ -38,6 +40,8 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
   const [classifications, setClassifications] = useState<ClassificationState>(() =>
     loadClassifications()
   )
+  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set())
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
   const removeFeatureStateRef = useRef<RemoveFeatureStateFn | null>(null)
 
   useEffect(() => {
@@ -54,9 +58,7 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
         setClassifications(merged)
         saveClassifications(merged)
       })
-      .catch(() => {
-        // API nicht erreichbar — localStorage-Daten weiter verwenden
-      })
+      .catch(() => {})
   }, [])
 
   const registerRemoveFeatureState = useCallback((fn: RemoveFeatureStateFn | null) => {
@@ -71,20 +73,23 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
       const next = { ...prev }
       if (classification === null) {
         delete next[buildingId]
-        if (API_ENABLED) apiDeleteClassification(buildingId).catch(() => {})
       } else {
         const existing = prev[buildingId]
-        const entry: ClassificationEntry = {
+        next[buildingId] = {
           classification,
           yearOfConstruction: yearOfConstruction !== undefined ? yearOfConstruction : (existing?.yearOfConstruction ?? null),
           lastModified: Date.now(),
         }
-        next[buildingId] = entry
-        if (API_ENABLED) apiSaveClassification(buildingId, entry).catch(() => {})
       }
-      saveClassifications(next)
       return next
     })
+    if (classification === null) {
+      setDeletedIds((prev) => new Set(prev).add(buildingId))
+      setDirtyIds((prev) => { const n = new Set(prev); n.delete(buildingId); return n })
+    } else {
+      setDirtyIds((prev) => new Set(prev).add(buildingId))
+      setDeletedIds((prev) => { const n = new Set(prev); n.delete(buildingId); return n })
+    }
   }, [])
 
   const getClassification = useCallback(
@@ -105,22 +110,50 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
     setClassifications((prev) => {
       const existing = prev[buildingId]
       if (!existing) return prev
-      const entry = { ...existing, yearOfConstruction: year, lastModified: Date.now() }
-      const next = { ...prev, [buildingId]: entry }
-      saveClassifications(next)
-      if (API_ENABLED) apiSaveClassification(buildingId, entry).catch(() => {})
+      const next = { ...prev, [buildingId]: { ...existing, yearOfConstruction: year, lastModified: Date.now() } }
       return next
     })
+    setDirtyIds((prev) => new Set(prev).add(buildingId))
   }, [])
+
+  const hasPendingChanges = dirtyIds.size > 0 || deletedIds.size > 0
+
+  const saveAllPending = useCallback(() => {
+    setClassifications((current) => {
+      saveClassifications(current)
+
+      if (API_ENABLED) {
+        for (const id of dirtyIds) {
+          const entry = current[id]
+          if (entry) apiSaveClassification(id, entry).catch(() => {})
+        }
+        for (const id of deletedIds) {
+          apiDeleteClassification(id).catch(() => {})
+        }
+      }
+
+      return current
+    })
+    setDirtyIds(new Set())
+    setDeletedIds(new Set())
+  }, [dirtyIds, deletedIds])
 
   const importClassifications = useCallback((data: ClassificationState) => {
     setClassifications(data)
     saveClassifications(data)
+    setDirtyIds(new Set())
+    setDeletedIds(new Set())
   }, [])
 
   const value = useMemo<ClassificationContextValue>(
-    () => ({ classifications, setClassification, getClassification, getYearOfConstruction, setYearOfConstruction, registerRemoveFeatureState, importClassifications }),
-    [classifications, setClassification, getClassification, getYearOfConstruction, setYearOfConstruction, registerRemoveFeatureState, importClassifications]
+    () => ({
+      classifications, setClassification, getClassification, getYearOfConstruction,
+      setYearOfConstruction, registerRemoveFeatureState, importClassifications,
+      hasPendingChanges, saveAllPending,
+    }),
+    [classifications, setClassification, getClassification, getYearOfConstruction,
+     setYearOfConstruction, registerRemoveFeatureState, importClassifications,
+     hasPendingChanges, saveAllPending]
   )
 
   return (

@@ -81,7 +81,7 @@ function App() {
   return (
     <div className="w-full h-screen flex flex-col">
       <header className="flex-shrink-0 px-4 py-2 bg-slate-800 text-white shadow flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Altbaufinder Berlin-Mitte</h1>
+        <h1 className="text-lg font-semibold">Altbaufinder Berlin</h1>
         <a
           href="https://www.openstreetmap.org/copyright"
           target="_blank"
@@ -131,6 +131,7 @@ function App() {
                 buildings={selectedBuildings}
                 onClose={() => setSelectedBuildings([])}
                 isEditor={appMode === 'editor'}
+                onDeselectAll={() => setSelectedBuildings([])}
               />
             </div>
             {/* Mobile: Slide-up-Sheet am unteren Rand */}
@@ -139,6 +140,7 @@ function App() {
                 buildings={selectedBuildings}
                 onClose={() => setSelectedBuildings([])}
                 isEditor={appMode === 'editor'}
+                onDeselectAll={() => setSelectedBuildings([])}
               />
             </div>
           </>

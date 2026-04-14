@@ -1,8 +1,8 @@
-[out:json][timeout:180];
-// Berlin-Mitte (Bezirk): alle Gebäudegrundrisse als ways UND multipolygon-relations
+[out:json][timeout:600];
+// Ganz Berlin: alle Gebäudegrundrisse als ways UND multipolygon-relations
 (
-  way["building"](52.50, 13.37, 52.54, 13.44);
-  relation["building"](52.50, 13.37, 52.54, 13.44);
+  way["building"](52.34,13.09,52.68,13.76);
+  relation["building"](52.34,13.09,52.68,13.76);
 );
 out body geom;
 >;

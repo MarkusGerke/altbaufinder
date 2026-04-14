@@ -21,10 +21,10 @@ TMPFILE="$DATA_DIR/.buildings_update_tmp.json"
 BACKUP="$DATA_DIR/berlin_mitte_buildings.backup.geojson"
 
 OVERPASS_URL="https://overpass-api.de/api/interpreter"
-OVERPASS_QUERY='[out:json][timeout:300];
+OVERPASS_QUERY='[out:json][timeout:600];
 (
-  way["building"](52.50, 13.37, 52.54, 13.44);
-  relation["building"](52.50, 13.37, 52.54, 13.44);
+  way["building"](52.34,13.09,52.68,13.76);
+  relation["building"](52.34,13.09,52.68,13.76);
 );
 out body geom;
 >;

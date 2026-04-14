@@ -1,0 +1,11 @@
+---
+description: Nach Änderungen immer nach GitHub pushen; Deploy zu all-inkl auslösen
+alwaysApply: true
+---
+
+# Deploy-Workflow (GitHub → all-inkl)
+
+- Wenn sinnvolle Arbeit am Projekt abgeschlossen ist: **Änderungen committen und auf `main` nach `origin` pushen**.
+- Ein **Push auf `main`** startet automatisch den GitHub Actions Workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): Build (`npm run build` mit `VITE_API_URL`) und **rsync** von `dist/` sowie `api-release/` auf den all-inkl-Webroot (Secrets: `SSH_*`, `REMOTE_WEBROOT`).
+- **Nicht** manuell auf dem Server bauen, wenn der Workflow das übernehmen soll – außer der Nutzer verlangt ausdrücklich etwas anderes.
+- `api/config.php` liegt **nicht** im Repo und wird durch rsync nicht überschrieben, solange sie nur auf dem Server existiert (Upload enthält nur `api-release/` ohne `config.php`).
