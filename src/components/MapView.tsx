@@ -9,6 +9,20 @@ import { getSunPosition, sunToLightPosition } from '../utils/sunPosition'
 const BERLIN_CENTER: [number, number] = [13.404954, 52.520008]
 const DEFAULT_ZOOM = 15
 
+const GEO_SESSION_DISMISS_KEY = 'altbaufinder-geolocate-dismissed'
+
+function isMobileGeolocateContext(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    window.matchMedia('(max-width: 767px)').matches ||
+    window.matchMedia('(pointer: coarse)').matches
+  )
+}
+
+function geolocateAnchor(): maplibregl.ControlPosition {
+  return isMobileGeolocateContext() ? 'bottom-right' : 'top-right'
+}
+
 const VECTOR_SOURCE = 'openmaptiles'
 const BUILDING_SOURCE_LAYER = 'building'
 const SELECTION_SOURCE = 'selection-overlay'
@@ -157,10 +171,21 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     })
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
-    map.addControl(new maplibregl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true },
+
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
       trackUserLocation: true,
-    }), 'top-right')
+      showAccuracyCircle: true,
+      showUserLocation: true,
+      fitBoundsOptions: {
+        maxZoom: 17,
+        padding: isMobileGeolocateContext()
+          ? { top: 56, bottom: 100, left: 20, right: 20 }
+          : { top: 40, bottom: 40, left: 40, right: 40 },
+      },
+    })
+    map.addControl(geolocate, geolocateAnchor())
+
     map.addControl(new maplibregl.ScaleControl(), 'bottom-left')
 
     map.on('load', () => {
@@ -279,6 +304,31 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
       clsSrc.setData(buildClassificationFC(classificationsRef.current, filtersRef.current))
       const selSrc = map.getSource(SELECTION_SOURCE) as maplibregl.GeoJSONSource
       selSrc.setData(selectionFeatureCollection(selectedBuildingsRef.current))
+
+      const shouldAutoGeolocate =
+        isMobileGeolocateContext() &&
+        typeof sessionStorage !== 'undefined' &&
+        sessionStorage.getItem(GEO_SESSION_DISMISS_KEY) !== '1'
+
+      if (shouldAutoGeolocate) {
+        const onGeoError = () => {
+          try {
+            sessionStorage.setItem(GEO_SESSION_DISMISS_KEY, '1')
+          } catch { /* private mode */ }
+          geolocate.off('error', onGeoError)
+        }
+        geolocate.on('error', onGeoError)
+        geolocate.once('geolocate', () => {
+          geolocate.off('error', onGeoError)
+        })
+        requestAnimationFrame(() => {
+          try {
+            geolocate.trigger()
+          } catch {
+            onGeoError()
+          }
+        })
+      }
     })
 
     mapRef.current = map

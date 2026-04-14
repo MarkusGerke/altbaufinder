@@ -18,3 +18,12 @@ body {
 .animate-slide-up {
   animation: slide-up 0.25s ease-out;
 }
+
+/* Größere Touch-Fläche für Standort-Button (MapLibre) auf schmalen Viewports */
+@media (max-width: 767px) {
+  .maplibregl-ctrl-geolocate .maplibregl-ctrl-icon {
+    width: 44px;
+    height: 44px;
+    background-size: 26px 26px;
+  }
+}
