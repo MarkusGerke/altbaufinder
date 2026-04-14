@@ -31,12 +31,8 @@ function App() {
       setSelectedBuildings((prev) => {
         const isMulti = shiftKey || multiSelectMode
         const clickKey = segmentStorageKey(building.id, building.geometry)
-        const existsById = prev.some((b) => b.id === building.id)
         const existsByKey = prev.some((b) => segmentStorageKey(b.id, b.geometry) === clickKey)
         if (isMulti) {
-          // #region agent log
-          fetch('http://127.0.0.1:7858/ingest/56e6680e-87b3-4f0d-9b35-c2b920d9c2ed',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c37930'},body:JSON.stringify({sessionId:'c37930',location:'App.tsx:onBuildingClick',message:'multi-select click',data:{hypothesisId:'H1',buildingId:building.id,clickKey,prevCount:prev.length,existsById,existsByKey,action:existsByKey?'toggleOffSegment':'add'},timestamp:Date.now(),runId:'post-fix'})}).catch(()=>{});
-          // #endregion
           if (existsByKey) {
             return prev.filter((b) => segmentStorageKey(b.id, b.geometry) !== clickKey)
           }
