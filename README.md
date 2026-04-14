@@ -86,6 +86,8 @@ Es werden nur `classifications.php`, `db.php`, `schema.sql`, `config.example.php
 
 Nur **eine** Variante (SSH **oder** FTP) Secrets setzen, sonst laufen beide Deploy-Jobs.
 
+**Wichtig:** Ohne **mindestens eine** vollständige Secret-Gruppe (SSH **oder** FTP) baut GitHub zwar das Projekt, lädt aber **nichts** auf all-inkl hoch — die Live-Seite bleibt dann unverändert (wirkt wie „alter Stand“).
+
 FTP nutzt im Workflow **ftps** auf Port **21**. Wenn dein Hoster nur Klartext-FTP erlaubt, in `.github/workflows/deploy.yml` bei beiden FTP-Schritten `protocol: ftp` setzen.
 
 Details und Kommentare: `.github/workflows/deploy.yml`.
