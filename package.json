@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:vite": "vite",
+    "php:api": "php -S 127.0.0.1:8787 -t api",
     "build": "tsc -b && vite build",
     "build:prod": "VITE_API_URL=https://altbaufinder.markusgerke.com/api npm run build",
     "lint": "eslint src --max-warnings 0",

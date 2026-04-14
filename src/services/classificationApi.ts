@@ -1,3 +1,4 @@
+import { readJsonResponse } from '@/lib/readJsonResponse'
 import type { ClassificationEntry } from '../types'
 import { AUTH_TOKEN_KEY } from './authApi'
 
@@ -17,8 +18,9 @@ function authHeaders(): Record<string, string> {
 
 export async function fetchClassifications(): Promise<ClassificationState> {
   const res = await fetch(`${API_BASE}/classifications.php`)
+  const data = await readJsonResponse<ClassificationState>(res)
   if (!res.ok) throw new Error(`API-Fehler: ${res.status}`)
-  return res.json() as Promise<ClassificationState>
+  return data
 }
 
 export async function saveClassification(

@@ -1,0 +1,11 @@
+---
+description: Antworten und technische Schritte für Einsteiger verständlich formulieren (Deutsch).
+alwaysApply: true
+---
+
+# Erklärstil für Anfänger
+
+- Antworten auf **Deutsch**, klar und ohne unnötigen Fachjargon.
+- Wenn technische Schritte nötig sind (z. B. Server starten, Datei anlegen): **kurz erklären, was das ist und warum**, dann **nummerierte, einfache Einzelschritte** (was wo klicken/tippen).
+- Begriffe beim ersten Vorkommen in Klammern kurz erläutern oder mit Alltagsbeispielen.
+- Keine stillschweigenden Annahmen („Terminal“, „Dev-Server“) ohne einen Satz Kontext, was das für den Nutzer bedeutet.

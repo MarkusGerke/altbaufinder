@@ -23,7 +23,8 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-const API_ENABLED = !!import.meta.env.VITE_API_URL
+/** Ohne gesetzte Variable nutzt die App `/api` (Vite-Proxy) — trotzdem API aktiv. */
+const API_ENABLED = (import.meta.env.VITE_API_URL ?? '/api').length > 0
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => {

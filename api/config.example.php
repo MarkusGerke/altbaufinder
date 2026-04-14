@@ -5,7 +5,12 @@
  * config.php ist in .gitignore und wird NICHT ins Repository committed.
  */
 return [
+    /** MySQL-Host; „localhost“ wird intern zu 127.0.0.1 (TCP), siehe api/db.php */
     'host'        => 'localhost',
+    /** Nur nötig, wenn du bewusst per Socket statt TCP verbinden willst: */
+    // 'unix_socket' => '/tmp/mysql.sock',
+    /** Nur bei abweichendem Port: */
+    // 'port'        => 3306,
     'dbname'      => 'altbaufinder',
     'user'        => 'altbaufinder_user',
     'password'    => 'DEIN_PASSWORT',

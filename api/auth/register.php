@@ -63,8 +63,18 @@ try {
     if ($e->getCode() === 23000 || str_contains($e->getMessage(), 'Duplicate')) {
         http_response_code(409);
         echo json_encode(['error' => 'Diese E-Mail ist bereits registriert']);
-        return;
+        exit;
+    }
+    $msg = $e->getMessage();
+    $userMsg = 'Registrierung fehlgeschlagen.';
+    if (str_contains($msg, '2002') || str_contains($msg, 'Connection refused') || str_contains($msg, 'denied')) {
+        $userMsg = 'Keine Verbindung zur Datenbank. Prüfe, ob MySQL läuft und api/config.php stimmt.';
+    } elseif (str_contains($msg, '1049') || str_contains($msg, "Unknown database")) {
+        $userMsg = 'Die Datenbank aus config.php existiert nicht.';
+    } elseif (str_contains($msg, '1146') || (str_contains($msg, "doesn't exist") && str_contains($msg, 'users'))) {
+        $userMsg = 'Datenbank nicht vorbereitet (Tabelle users fehlt). Siehe api/schema.sql bzw. ensure_marks_tables.';
     }
     http_response_code(500);
-    echo json_encode(['error' => 'Registrierung fehlgeschlagen', 'detail' => $e->getMessage()]);
+    echo json_encode(['error' => $userMsg, 'detail' => $msg], JSON_UNESCAPED_UNICODE);
+    exit;
 }
