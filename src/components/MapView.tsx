@@ -23,6 +23,30 @@ function geolocateAnchor(): maplibregl.ControlPosition {
   return isMobileGeolocateContext() ? 'bottom-right' : 'top-right'
 }
 
+/** iPhone / iPad (inkl. iPadOS „Macintosh“ mit Touch) – Safari neigt zu Timeouts bei High-Accuracy + watchPosition. */
+function isAppleTouchDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+}
+
+/** Für iOS: schnellere Fix über WLAN/Funkzellen; kein erzwungenes GPS. */
+function geolocatePositionOptions(): PositionOptions {
+  if (isAppleTouchDevice() || isMobileGeolocateContext()) {
+    return {
+      enableHighAccuracy: false,
+      maximumAge: 300_000,
+      timeout: 30_000,
+    }
+  }
+  return {
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 15_000,
+  }
+}
+
 const VECTOR_SOURCE = 'openmaptiles'
 const BUILDING_SOURCE_LAYER = 'building'
 const SELECTION_SOURCE = 'selection-overlay'
@@ -173,8 +197,9 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
     const geolocate = new maplibregl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-      trackUserLocation: true,
+      positionOptions: geolocatePositionOptions(),
+      // iOS Safari: dauerhaftes Tracking (watchPosition) oft instabil → nur bei Tipp zentrieren, erneut tippen zum Aktualisieren.
+      trackUserLocation: !isAppleTouchDevice(),
       showAccuracyCircle: true,
       showUserLocation: true,
       fitBoundsOptions: {
