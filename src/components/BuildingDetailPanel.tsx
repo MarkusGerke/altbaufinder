@@ -1,14 +1,10 @@
 import { useState, useEffect } from 'react'
 import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
-
-export interface SelectedBuilding {
-  id: string
-  properties: Record<string, unknown>
-}
+import type { SelectedBuildingGeo } from './MapView'
 
 interface BuildingDetailPanelProps {
-  buildings: SelectedBuilding[]
+  buildings: SelectedBuildingGeo[]
   onClose: () => void
   isEditor: boolean
   onDeselectAll?: () => void
@@ -68,7 +64,7 @@ function osmLinkFromId(id: string): string | null {
   return `https://www.openstreetmap.org/${type}/${m[2]}`
 }
 
-function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuilding; isEditor: boolean }) {
+function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildingGeo; isEditor: boolean }) {
   const { getClassification, setClassification, getYearOfConstruction, setYearOfConstruction, hasPendingChanges, saveAllPending } = useClassification()
   const classification = getClassification(building.id)
   const savedYear = getYearOfConstruction(building.id)
@@ -156,7 +152,7 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
   )
 }
 
-function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings: SelectedBuilding[]; isEditor: boolean; onDeselectAll?: () => void }) {
+function MultiBuildingDetail({ buildings, isEditor, onDeselectAll }: { buildings: SelectedBuildingGeo[]; isEditor: boolean; onDeselectAll?: () => void }) {
   const { setClassification, hasPendingChanges, saveAllPending } = useClassification()
 
   const classifyAll = (c: BuildingClassification) => {

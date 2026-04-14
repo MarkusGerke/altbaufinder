@@ -10,12 +10,8 @@ const DEFAULT_ZOOM = 15
 
 const VECTOR_SOURCE = 'openmaptiles'
 const BUILDING_SOURCE_LAYER = 'building'
+const SELECTION_SOURCE = 'selection-overlay'
 
-/**
- * OpenFreeMap/Planetiler encodes feature IDs as `osm_id * 10 + type`
- * where type: 1=node, 2=way, 3=relation.
- * We convert to a stable string ID for classification storage.
- */
 function tileIdToStringId(tileId: number): string {
   const typeCode = tileId % 10
   const osmId = Math.floor(tileId / 10)
@@ -40,23 +36,6 @@ const CLASSIFICATION_COLORS: unknown = [
   '#94a3b8',
 ]
 
-const SELECTED_COLORS: unknown = [
-  'match',
-  ['coalesce', ['feature-state', 'classification'], 'unclassified'],
-  'original', '#15803d',
-  'altbau_entstuckt', '#a16207',
-  'kein_altbau', '#b91c1c',
-  'unclassified', '#475569',
-  '#475569',
-]
-
-const FILL_COLOR_WITH_SELECTION: unknown = [
-  'case',
-  ['==', ['feature-state', 'selected'], true],
-  SELECTED_COLORS,
-  CLASSIFICATION_COLORS,
-]
-
 const HEIGHT_EXPRESSION: unknown = [
   'max', 8,
   ['coalesce', ['to-number', ['get', 'render_height']], 10],
@@ -70,7 +49,7 @@ function buildFillColorExpression(filters: FilterState): maplibregl.ExpressionSp
   if (filters.showRed) conditions.push(['==', stateClass, 'kein_altbau'])
   if (filters.showUnclassified) conditions.push(['==', stateClass, 'unclassified'])
   if (conditions.length === 0) return 'rgba(0,0,0,0)' as unknown as maplibregl.ExpressionSpecification
-  const baseColor = FILL_COLOR_WITH_SELECTION as maplibregl.ExpressionSpecification
+  const baseColor = CLASSIFICATION_COLORS as maplibregl.ExpressionSpecification
   if (conditions.length === 1) {
     return ['case', conditions[0], baseColor, 'rgba(0,0,0,0)'] as unknown as maplibregl.ExpressionSpecification
   }
@@ -131,15 +110,50 @@ function applyClassificationStates(
   }
 }
 
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+
+function pointInRing(point: [number, number], ring: number[][]): boolean {
+  const [px, py] = point
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+function extractClickedPolygon(
+  geometry: GeoJSON.Geometry,
+  clickLngLat: [number, number]
+): GeoJSON.Geometry {
+  if (geometry.type === 'MultiPolygon') {
+    for (const polyCoords of geometry.coordinates) {
+      if (polyCoords[0] && pointInRing(clickLngLat, polyCoords[0])) {
+        return { type: 'Polygon', coordinates: polyCoords }
+      }
+    }
+  }
+  return geometry
+}
+
+export interface SelectedBuildingGeo {
+  id: string
+  properties: Record<string, unknown>
+  geometry: GeoJSON.Geometry
+}
+
 interface MapViewProps {
-  onBuildingClick?: (id: string, properties: Record<string, unknown>, lngLat: [number, number], shiftKey: boolean) => void
+  onBuildingClick?: (building: SelectedBuildingGeo, shiftKey: boolean) => void
   filters: FilterState
   viewMode: '2d' | '3d'
   whiteMode: boolean
-  selectedBuildingIds: string[]
+  selectedBuildings: SelectedBuildingGeo[]
 }
 
-export default function MapView({ onBuildingClick, filters, viewMode, whiteMode, selectedBuildingIds }: MapViewProps) {
+export default function MapView({ onBuildingClick, filters, viewMode, whiteMode, selectedBuildings }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const { classifications, registerRemoveFeatureState } = useClassification()
@@ -151,7 +165,6 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
   whiteModeRef.current = whiteMode
   const onBuildingClickRef = useRef(onBuildingClick)
   onBuildingClickRef.current = onBuildingClick
-  const prevSelectedIdsRef = useRef<string[]>([])
 
   useEffect(() => {
     if (!mapContainerRef.current) return
@@ -231,12 +244,32 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
         minzoom: 14,
         filter: ['!=', ['get', 'hide_3d'], true],
         paint: {
-          'fill-extrusion-color': whiteModeRef.current ? '#ffffff' : (FILL_COLOR_WITH_SELECTION as maplibregl.ExpressionSpecification),
+          'fill-extrusion-color': whiteModeRef.current ? '#ffffff' : (CLASSIFICATION_COLORS as maplibregl.ExpressionSpecification),
           'fill-extrusion-height': buildExtrusionHeightExpression(filtersRef.current),
           'fill-extrusion-base': ['coalesce', ['to-number', ['get', 'render_min_height']], 0] as maplibregl.ExpressionSpecification,
           'fill-extrusion-opacity': 0.85,
         },
         layout: { visibility: 'none' },
+      })
+
+      map.addSource(SELECTION_SOURCE, { type: 'geojson', data: EMPTY_FC })
+      map.addLayer({
+        id: 'selection-fill',
+        type: 'fill',
+        source: SELECTION_SOURCE,
+        paint: {
+          'fill-color': '#3b82f6',
+          'fill-opacity': 0.35,
+        },
+      })
+      map.addLayer({
+        id: 'selection-outline',
+        type: 'line',
+        source: SELECTION_SOURCE,
+        paint: {
+          'line-color': '#2563eb',
+          'line-width': 2.5,
+        },
       })
 
       map.on('sourcedata', (e) => {
@@ -258,8 +291,11 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
         if (!f || f.id == null) return
         const stringId = tileIdToStringId(f.id as number)
         const props = (f.properties ?? {}) as Record<string, unknown>
+        const rawGeometry = f.geometry as GeoJSON.Geometry
+        const clickPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat]
+        const geometry = extractClickedPolygon(rawGeometry, clickPoint)
         const shiftKey = (e.originalEvent as MouseEvent).shiftKey
-        onBuildingClickRef.current?.(stringId, props, [e.lngLat.lng, e.lngLat.lat], shiftKey)
+        onBuildingClickRef.current?.({ id: stringId, properties: props, geometry }, shiftKey)
       }
       map.on('click', 'buildings-fill', handleClick)
       map.on('click', 'buildings-extrusion', handleClick)
@@ -286,22 +322,22 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map?.getSource(VECTOR_SOURCE)) return
-    const prevIds = prevSelectedIdsRef.current
-    prevSelectedIdsRef.current = selectedBuildingIds
-    try {
-      for (const sid of prevIds) {
-        const tid = stringIdToTileId(sid)
-        if (tid != null) map.setFeatureState({ source: VECTOR_SOURCE, sourceLayer: BUILDING_SOURCE_LAYER, id: tid }, { selected: false })
+    const src = map?.getSource(SELECTION_SOURCE) as maplibregl.GeoJSONSource | undefined
+    if (!src) return
+    if (selectedBuildings.length === 0) {
+      src.setData(EMPTY_FC)
+    } else {
+      const fc: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: selectedBuildings.map((b) => ({
+          type: 'Feature' as const,
+          properties: { id: b.id },
+          geometry: b.geometry,
+        })),
       }
-      for (const sid of selectedBuildingIds) {
-        const tid = stringIdToTileId(sid)
-        if (tid != null) map.setFeatureState({ source: VECTOR_SOURCE, sourceLayer: BUILDING_SOURCE_LAYER, id: tid }, { selected: true })
-      }
-    } catch {
-      // tile not loaded
+      src.setData(fc)
     }
-  }, [selectedBuildingIds])
+  }, [selectedBuildings])
 
   useEffect(() => {
     const map = mapRef.current
@@ -313,7 +349,7 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     map.setPaintProperty('buildings-fill', 'fill-outline-color', whiteMode ? '#e2e8f0' : outlineColor2D)
     map.setPaintProperty('buildings-fill', 'fill-opacity', 0.9)
     map.setPaintProperty('buildings-extrusion', 'fill-extrusion-height', extrusionHeight3D)
-    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-color', whiteMode ? '#ffffff' : (FILL_COLOR_WITH_SELECTION as maplibregl.ExpressionSpecification))
+    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-color', whiteMode ? '#ffffff' : (CLASSIFICATION_COLORS as maplibregl.ExpressionSpecification))
     map.setLayoutProperty('buildings-fill', 'visibility', viewMode === '2d' ? 'visible' : 'none')
     map.setLayoutProperty('buildings-extrusion', 'visibility', viewMode === '3d' ? 'visible' : 'none')
     if (viewMode === '3d') {

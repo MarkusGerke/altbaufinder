@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
-import MapView from './components/MapView'
+import MapView, { type SelectedBuildingGeo } from './components/MapView'
 import Toolbar, { type FilterState } from './components/Toolbar'
-import BuildingDetailPanel, { type SelectedBuilding } from './components/BuildingDetailPanel'
+import BuildingDetailPanel from './components/BuildingDetailPanel'
 import { useClassification } from './context/ClassificationContext'
 import type { AppMode } from './types'
 import type { ClassificationEntry } from './types'
@@ -20,21 +20,21 @@ function App() {
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d')
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
   const [whiteMode, setWhiteMode] = useState(false)
-  const [selectedBuildings, setSelectedBuildings] = useState<SelectedBuilding[]>([])
+  const [selectedBuildings, setSelectedBuildings] = useState<SelectedBuildingGeo[]>([])
   const [multiSelectMode, setMultiSelectMode] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { classifications, importClassifications } = useClassification()
 
   const onBuildingClick = useCallback(
-    (id: string, properties: Record<string, unknown>, _lngLat: [number, number], shiftKey: boolean) => {
+    (building: SelectedBuildingGeo, shiftKey: boolean) => {
       setSelectedBuildings((prev) => {
         const isMulti = shiftKey || multiSelectMode
         if (isMulti) {
-          const exists = prev.find((b) => b.id === id)
-          if (exists) return prev.filter((b) => b.id !== id)
-          return [...prev, { id, properties }]
+          const exists = prev.find((b) => b.id === building.id)
+          if (exists) return prev.filter((b) => b.id !== building.id)
+          return [...prev, building]
         }
-        return [{ id, properties }]
+        return [building]
       })
     },
     [multiSelectMode]
@@ -121,11 +121,10 @@ function App() {
           filters={filters}
           viewMode={viewMode}
           whiteMode={whiteMode}
-          selectedBuildingIds={selectedBuildings.map((b) => b.id)}
+          selectedBuildings={selectedBuildings}
         />
         {selectedBuildings.length > 0 && (
           <>
-            {/* Desktop: oben rechts */}
             <div className="hidden md:block absolute top-4 right-4 z-10">
               <BuildingDetailPanel
                 buildings={selectedBuildings}
@@ -134,7 +133,6 @@ function App() {
                 onDeselectAll={() => setSelectedBuildings([])}
               />
             </div>
-            {/* Mobile: Slide-up-Sheet am unteren Rand */}
             <div className="md:hidden absolute bottom-0 left-0 right-0 z-10 animate-slide-up [&>div]:rounded-b-none [&>div]:rounded-t-xl [&>div]:max-h-[60vh]">
               <BuildingDetailPanel
                 buildings={selectedBuildings}
