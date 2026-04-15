@@ -17,6 +17,15 @@ function throwAuthError(res: Response, data: ApiErrorBody, fallback: string): ne
 export interface AuthUser {
   id: number
   email: string
+  displayName: string
+}
+
+function parseAuthUser(raw: { id: number; email: string; displayName?: string | null }): AuthUser {
+  const dn =
+    raw.displayName != null && String(raw.displayName).trim() !== ''
+      ? String(raw.displayName).trim()
+      : (raw.email.split('@')[0] || 'Nutzer')
+  return { id: raw.id, email: raw.email, displayName: dn }
 }
 
 export interface MeResponse {
@@ -24,18 +33,28 @@ export interface MeResponse {
   score: number
 }
 
-export async function authRegister(email: string, password: string): Promise<{ token: string; user: AuthUser }> {
+export async function authRegister(
+  email: string,
+  password: string,
+  displayName?: string
+): Promise<{ token: string; user: AuthUser }> {
   const res = await fetch(`${API_BASE}/auth/register.php`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      email,
+      password,
+      ...(displayName != null && displayName.trim() !== ''
+        ? { displayName: displayName.trim() }
+        : {}),
+    }),
   })
   const data = await readJsonResponse<{ error?: string; detail?: string; token?: string; user?: AuthUser }>(
     res
   )
   if (!res.ok) throwAuthError(res, data, 'Registrierung fehlgeschlagen')
   if (!data.token || !data.user) throw new Error('Ungültige Server-Antwort')
-  return { token: data.token, user: data.user }
+  return { token: data.token, user: parseAuthUser(data.user) }
 }
 
 export async function authLogin(email: string, password: string): Promise<{ token: string; user: AuthUser }> {
@@ -47,7 +66,7 @@ export async function authLogin(email: string, password: string): Promise<{ toke
   const data = await readJsonResponse<{ error?: string; detail?: string; token?: string; user?: AuthUser }>(res)
   if (!res.ok) throwAuthError(res, data, 'Anmeldung fehlgeschlagen')
   if (!data.token || !data.user) throw new Error('Ungültige Server-Antwort')
-  return { token: data.token, user: data.user }
+  return { token: data.token, user: parseAuthUser(data.user) }
 }
 
 export async function authMe(token: string): Promise<MeResponse> {
@@ -57,13 +76,13 @@ export async function authMe(token: string): Promise<MeResponse> {
   const data = await readJsonResponse<{ error?: string; detail?: string; user?: AuthUser; score?: number }>(res)
   if (!res.ok) throwAuthError(res, data, 'Abfrage fehlgeschlagen')
   if (!data.user || data.score === undefined) throw new Error('Ungültige Server-Antwort')
-  return { user: data.user, score: data.score }
+  return { user: parseAuthUser(data.user), score: data.score }
 }
 
 export interface LeaderboardRow {
   rank: number
   score: number
-  emailMasked: string
+  displayName: string
 }
 
 export async function fetchLeaderboard(): Promise<LeaderboardRow[]> {
@@ -101,6 +120,18 @@ export async function completePasswordReset(resetToken: string, password: string
   if (!res.ok) throwAuthError(res, data, 'Passwort konnte nicht gesetzt werden')
 }
 
+export async function updateAccountDisplayName(token: string, displayName: string): Promise<AuthUser> {
+  const res = await fetch(`${API_BASE}/auth/account-update-display-name.php`, {
+    method: 'POST',
+    headers: jsonAuthHeaders(token),
+    body: JSON.stringify({ displayName }),
+  })
+  const data = await readJsonResponse<{ error?: string; detail?: string; user?: AuthUser }>(res)
+  if (!res.ok) throwAuthError(res, data, 'Anzeigename konnte nicht geändert werden')
+  if (!data.user) throw new Error('Ungültige Server-Antwort')
+  return parseAuthUser(data.user)
+}
+
 export async function updateAccountEmail(
   token: string,
   currentPassword: string,
@@ -114,7 +145,7 @@ export async function updateAccountEmail(
   const data = await readJsonResponse<{ error?: string; detail?: string; user?: AuthUser }>(res)
   if (!res.ok) throwAuthError(res, data, 'E-Mail konnte nicht geändert werden')
   if (!data.user) throw new Error('Ungültige Server-Antwort')
-  return data.user
+  return parseAuthUser(data.user)
 }
 
 export async function updateAccountPassword(

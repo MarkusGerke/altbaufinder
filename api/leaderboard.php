@@ -22,10 +22,10 @@ try {
     $pdo = getDbConnection();
     ensure_marks_tables($pdo);
     $sql = '
-        SELECT u.id, u.email, COUNT(m.building_id) AS score
+        SELECT u.id, u.display_name, u.email, COUNT(m.building_id) AS score
         FROM users u
         INNER JOIN user_building_marks m ON m.user_id = u.id
-        GROUP BY u.id, u.email
+        GROUP BY u.id, u.display_name, u.email
         ORDER BY score DESC
         LIMIT 10
     ';
@@ -33,10 +33,13 @@ try {
     $rank = 1;
     $out = [];
     foreach ($rows as $row) {
+        $name = isset($row['display_name']) && $row['display_name'] !== ''
+            ? (string) $row['display_name']
+            : mask_email((string) $row['email']);
         $out[] = [
-            'rank'          => $rank++,
-            'score'         => (int) $row['score'],
-            'emailMasked'   => mask_email($row['email']),
+            'rank'        => $rank++,
+            'score'       => (int) $row['score'],
+            'displayName' => $name,
         ];
     }
     echo json_encode(['leaderboard' => $out]);

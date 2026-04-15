@@ -50,7 +50,7 @@ if (!filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
 try {
     $pdo = getDbConnection();
     ensure_marks_tables($pdo);
-    $stmt = $pdo->prepare('SELECT id, email, password_hash FROM users WHERE id = :id LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, email, display_name, password_hash FROM users WHERE id = :id LIMIT 1');
     $stmt->execute([':id' => $uid]);
     $row = $stmt->fetch();
     if (!$row || !password_verify($currentPassword, $row['password_hash'])) {
@@ -59,8 +59,15 @@ try {
         exit;
     }
 
+    $dn = isset($row['display_name']) && $row['display_name'] !== ''
+        ? (string) $row['display_name']
+        : ('Nutzer' . $uid);
+
     if (normalize_email($row['email']) === $newEmail) {
-        echo json_encode(['user' => ['id' => $uid, 'email' => $newEmail]], JSON_UNESCAPED_UNICODE);
+        echo json_encode(
+            ['user' => ['id' => $uid, 'email' => $newEmail, 'displayName' => $dn]],
+            JSON_UNESCAPED_UNICODE
+        );
         exit;
     }
 
@@ -74,7 +81,10 @@ try {
 
     $upd = $pdo->prepare('UPDATE users SET email = :e WHERE id = :id');
     $upd->execute([':e' => $newEmail, ':id' => $uid]);
-    echo json_encode(['user' => ['id' => $uid, 'email' => $newEmail]], JSON_UNESCAPED_UNICODE);
+    echo json_encode(
+        ['user' => ['id' => $uid, 'email' => $newEmail, 'displayName' => $dn]],
+        JSON_UNESCAPED_UNICODE
+    );
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Speichern fehlgeschlagen', 'detail' => $e->getMessage()], JSON_UNESCAPED_UNICODE);

@@ -15,6 +15,7 @@ import {
   deleteAccountApi,
   requestPasswordReset,
   updateAccountEmail,
+  updateAccountDisplayName,
   updateAccountPassword,
   type AuthUser,
 } from '../services/authApi'
@@ -25,11 +26,12 @@ interface AuthContextValue {
   error: string | null
   clearError: () => void
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string) => Promise<void>
+  register: (email: string, password: string, displayName?: string) => Promise<void>
   logout: () => void
   refreshMe: () => Promise<void>
   isLoggedIn: boolean
   requestPasswordReset: (email: string) => Promise<void>
+  updateDisplayName: (displayName: string) => Promise<void>
   updateEmail: (currentPassword: string, newEmail: string) => Promise<void>
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   deleteAccount: (password: string) => Promise<void>
@@ -98,9 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setScore(me.score)
   }, [])
 
-  const register = useCallback(async (email: string, password: string) => {
+  const register = useCallback(async (email: string, password: string, displayName?: string) => {
     setError(null)
-    const { token: t, user: u } = await authRegister(email, password)
+    const { token: t, user: u } = await authRegister(email, password, displayName)
     try {
       localStorage.setItem(AUTH_TOKEN_KEY, t)
     } catch {
@@ -130,6 +132,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null)
     await requestPasswordReset(email)
   }, [])
+
+  const updateDisplayNameFn = useCallback(
+    async (displayName: string) => {
+      if (!token) throw new Error('Nicht angemeldet')
+      setError(null)
+      const u = await updateAccountDisplayName(token, displayName)
+      setUser(u)
+    },
+    [token]
+  )
 
   const updateEmail = useCallback(
     async (currentPassword: string, newEmail: string) => {
@@ -179,6 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshMe,
       isLoggedIn: !!user && !!token,
       requestPasswordReset: requestPasswordResetFn,
+      updateDisplayName: updateDisplayNameFn,
       updateEmail,
       changePassword,
       deleteAccount,
@@ -194,6 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshMe,
       token,
       requestPasswordResetFn,
+      updateDisplayNameFn,
       updateEmail,
       changePassword,
       deleteAccount,

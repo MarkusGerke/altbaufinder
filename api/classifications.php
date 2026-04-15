@@ -17,24 +17,30 @@ function normalize_classification_value(?string $v): ?string {
         return null;
     }
     static $valid = [
-        'stuck_perfekt'   => true,
-        'stuck_schoen'    => true,
-        'stuck_mittel'    => true,
-        'stuck_teilweise' => true,
-        'entstuckt'       => true,
+        'altbau_gruen' => true,
+        'altbau_gelb'  => true,
+        'altbau_rot'   => true,
+        'kein_altbau'  => true,
     ];
     if (isset($valid[$v])) {
         return $v;
     }
-    // Legacy → neu
+    // Alte 5er-Skala → 3 Stufen (+ kein_altbau unverändert wenn schon gesetzt)
+    if ($v === 'stuck_perfekt' || $v === 'stuck_schoen') {
+        return 'altbau_gruen';
+    }
+    if ($v === 'stuck_mittel' || $v === 'stuck_teilweise') {
+        return 'altbau_gelb';
+    }
+    if ($v === 'entstuckt') {
+        return 'altbau_rot';
+    }
+    // Legacy
     if ($v === 'original') {
-        return 'stuck_perfekt';
+        return 'altbau_gruen';
     }
     if ($v === 'altbau_entstuckt') {
-        return 'stuck_teilweise';
-    }
-    if ($v === 'kein_altbau') {
-        return null;
+        return 'altbau_gelb';
     }
     return null;
 }
@@ -78,6 +84,19 @@ try {
     }
 } catch (Exception $e) {
     // ohne geometry_json weiter
+}
+
+// Einmalige Datenmigration: alte Stufen-Strings → altbau_gruen / gelb / rot
+try {
+    $pdo->exec(
+        "UPDATE classifications SET classification = 'altbau_gruen' WHERE classification IN ('stuck_perfekt','stuck_schoen')"
+    );
+    $pdo->exec(
+        "UPDATE classifications SET classification = 'altbau_gelb' WHERE classification IN ('stuck_mittel','stuck_teilweise')"
+    );
+    $pdo->exec("UPDATE classifications SET classification = 'altbau_rot' WHERE classification = 'entstuckt'");
+} catch (Exception $e) {
+    // Migration bei Bedarf manuell (siehe api/migrations/)
 }
 
 $method = $_SERVER['REQUEST_METHOD'];

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useClassification } from '../context/ClassificationContext'
-import type { ClassificationEntry } from '../types'
+import type { AppMode, ClassificationEntry } from '../types'
 import type { FilterState } from './Toolbar'
 import { CLASSIFICATION_HEX } from '../classificationLabels'
 import { getSunPosition, sunToLightPosition } from '../utils/sunPosition'
@@ -53,6 +53,94 @@ const BUILDING_SOURCE_LAYER = 'building'
 const SELECTION_SOURCE = 'selection-overlay'
 const CLASSIFICATION_SOURCE = 'classification-overlay'
 
+/** OpenFreeMap Liberty (Vektor-Basemap, gleiche `openmaptiles`-Quelle wie unsere Gebäude-Layer). */
+const VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+
+const CUSTOM_MAP_LAYER_IDS = new Set([
+  'buildings-fill',
+  'buildings-extrusion',
+  'classification-fill',
+  'classification-outline',
+  'selection-fill',
+  'selection-outline',
+])
+
+/** Im Viewer: POI-Schichten und Fußweg-Beschriftung ausblenden (Orientierung: Straßen, Orte, Gewässer). */
+const SYMBOL_LAYERS_HIDDEN_IN_VIEWER = new Set([
+  'poi_r20',
+  'poi_r7',
+  'poi_r1',
+  'poi_transit',
+  'airport',
+  'highway-name-path',
+])
+
+const LIBERTY_BACKGROUND = '#f8f4f0'
+
+function firstSymbolLayerId(map: maplibregl.Map): string | undefined {
+  return map.getStyle().layers?.find((l) => l.type === 'symbol')?.id
+}
+
+function hideDuplicateStyleBuildings(map: maplibregl.Map): void {
+  for (const id of ['building', 'building-3d']) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', 'none')
+    }
+  }
+}
+
+function snapshotBasemapVisibility(map: maplibregl.Map): Map<string, string | undefined> {
+  const snap = new Map<string, string | undefined>()
+  for (const layer of map.getStyle().layers ?? []) {
+    if (CUSTOM_MAP_LAYER_IDS.has(layer.id)) continue
+    try {
+      snap.set(layer.id, map.getLayoutProperty(layer.id, 'visibility') as string | undefined)
+    } catch {
+      snap.set(layer.id, undefined)
+    }
+  }
+  return snap
+}
+
+function applyViewerSymbolFilter(map: maplibregl.Map, mode: AppMode): void {
+  const vis = mode === 'viewer' ? 'none' : 'visible'
+  for (const id of SYMBOL_LAYERS_HIDDEN_IN_VIEWER) {
+    if (!map.getLayer(id)) continue
+    map.setLayoutProperty(id, 'visibility', vis)
+  }
+}
+
+function applyWhiteBasemap(
+  map: maplibregl.Map,
+  white: boolean,
+  snapshot: Map<string, string | undefined>
+): void {
+  if (white) {
+    for (const layer of map.getStyle().layers ?? []) {
+      if (CUSTOM_MAP_LAYER_IDS.has(layer.id)) continue
+      if (layer.id === 'background') {
+        map.setPaintProperty('background', 'background-color', '#ffffff')
+        continue
+      }
+      map.setLayoutProperty(layer.id, 'visibility', 'none')
+    }
+    return
+  }
+  for (const [id, prev] of snapshot) {
+    if (!map.getLayer(id)) continue
+    const v = prev === 'none' ? 'none' : 'visible'
+    try {
+      map.setLayoutProperty(id, 'visibility', v)
+    } catch {
+      /* ignore */
+    }
+  }
+  if (map.getLayer('background')) {
+    map.setPaintProperty('background', 'background-color', LIBERTY_BACKGROUND)
+  }
+  hideDuplicateStyleBuildings(map)
+}
+
 function tileIdToStringId(tileId: number): string {
   const typeCode = tileId % 10
   const osmId = Math.floor(tileId / 10)
@@ -62,19 +150,23 @@ function tileIdToStringId(tileId: number): string {
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
 
-function classificationVisible(c: ClassificationEntry['classification'], filters: FilterState): boolean {
+function classificationVisible(
+  c: ClassificationEntry['classification'],
+  filters: FilterState,
+  appMode: AppMode
+): boolean {
   if (!c) return false
+  if (c === 'kein_altbau') {
+    if (appMode === 'viewer') return false
+    return filters.showKeinAltbau
+  }
   switch (c) {
-    case 'stuck_perfekt':
-      return filters.showStuckPerfekt
-    case 'stuck_schoen':
-      return filters.showStuckSchoen
-    case 'stuck_mittel':
-      return filters.showStuckMittel
-    case 'stuck_teilweise':
-      return filters.showStuckTeilweise
-    case 'entstuckt':
-      return filters.showEntstuckt
+    case 'altbau_gruen':
+      return filters.showAltbauGruen
+    case 'altbau_gelb':
+      return filters.showAltbauGelb
+    case 'altbau_rot':
+      return filters.showAltbauRot
     default:
       return false
   }
@@ -82,12 +174,13 @@ function classificationVisible(c: ClassificationEntry['classification'], filters
 
 function buildClassificationFC(
   classifications: Record<string, ClassificationEntry>,
-  filters: FilterState
+  filters: FilterState,
+  appMode: AppMode
 ): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = []
   for (const [id, entry] of Object.entries(classifications)) {
     if (!entry.classification || !entry.geometry) continue
-    if (!classificationVisible(entry.classification, filters)) continue
+    if (!classificationVisible(entry.classification, filters, appMode)) continue
     features.push({
       type: 'Feature',
       properties: { id, classification: entry.classification },
@@ -100,16 +193,14 @@ function buildClassificationFC(
 const OVERLAY_FILL_COLOR: maplibregl.ExpressionSpecification = [
   'match',
   ['get', 'classification'],
-  'stuck_perfekt',
-  CLASSIFICATION_HEX.stuck_perfekt,
-  'stuck_schoen',
-  CLASSIFICATION_HEX.stuck_schoen,
-  'stuck_mittel',
-  CLASSIFICATION_HEX.stuck_mittel,
-  'stuck_teilweise',
-  CLASSIFICATION_HEX.stuck_teilweise,
-  'entstuckt',
-  CLASSIFICATION_HEX.entstuckt,
+  'altbau_gruen',
+  CLASSIFICATION_HEX.altbau_gruen,
+  'altbau_gelb',
+  CLASSIFICATION_HEX.altbau_gelb,
+  'altbau_rot',
+  CLASSIFICATION_HEX.altbau_rot,
+  'kein_altbau',
+  CLASSIFICATION_HEX.kein_altbau,
   '#94a3b8',
 ] as unknown as maplibregl.ExpressionSpecification
 
@@ -147,11 +238,12 @@ export interface SelectedBuildingGeo {
 }
 
 interface MapViewProps {
-  onBuildingClick?: (building: SelectedBuildingGeo, shiftKey: boolean) => void
+  onBuildingClick?: (building: SelectedBuildingGeo) => void
   filters: FilterState
   viewMode: '2d' | '3d'
   whiteMode: boolean
   selectedBuildings: SelectedBuildingGeo[]
+  appMode: AppMode
 }
 
 function selectionFeatureCollection(selected: SelectedBuildingGeo[]): GeoJSON.FeatureCollection {
@@ -166,7 +258,14 @@ function selectionFeatureCollection(selected: SelectedBuildingGeo[]): GeoJSON.Fe
   }
 }
 
-export default function MapView({ onBuildingClick, filters, viewMode, whiteMode, selectedBuildings }: MapViewProps) {
+export default function MapView({
+  onBuildingClick,
+  filters,
+  viewMode,
+  whiteMode,
+  selectedBuildings,
+  appMode,
+}: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const { classifications } = useClassification()
@@ -174,12 +273,15 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
   classificationsRef.current = classifications
   const filtersRef = useRef(filters)
   filtersRef.current = filters
+  const appModeRef = useRef(appMode)
+  appModeRef.current = appMode
   const whiteModeRef = useRef(whiteMode)
   whiteModeRef.current = whiteMode
   const onBuildingClickRef = useRef(onBuildingClick)
   onBuildingClickRef.current = onBuildingClick
   const selectedBuildingsRef = useRef(selectedBuildings)
   selectedBuildingsRef.current = selectedBuildings
+  const basemapSnapshotRef = useRef<Map<string, string | undefined> | null>(null)
 
   useEffect(() => {
     if (!mapContainerRef.current) return
@@ -187,32 +289,7 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       interactive: true,
-      style: {
-        version: 8,
-        sources: {
-          'osm-tiles': {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution:
-              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-          },
-        },
-        layers: [
-          {
-            id: 'background',
-            type: 'background',
-            paint: { 'background-color': '#ffffff' },
-          },
-          {
-            id: 'osm-tiles-layer',
-            type: 'raster',
-            source: 'osm-tiles',
-            minzoom: 0,
-            maxzoom: 19,
-          },
-        ],
-      },
+      style: VECTOR_STYLE_URL,
       center: BERLIN_CENTER,
       zoom: DEFAULT_ZOOM,
     })
@@ -236,10 +313,9 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     map.addControl(new maplibregl.ScaleControl(), 'bottom-left')
 
     map.on('load', () => {
-      map.addSource(VECTOR_SOURCE, {
-        url: 'https://tiles.openfreemap.org/planet',
-        type: 'vector',
-      })
+      hideDuplicateStyleBuildings(map)
+
+      const beforeSymbols = firstSymbolLayerId(map)
 
       const { azimuthDeg, elevationDeg } = getSunPosition(52.52, 13.405, new Date())
       map.setLight({
@@ -255,39 +331,46 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
       const baseFillOpacity = showUnclassifiedBase ? 0.9 : 0
       const baseOutlinePaint = showUnclassifiedBase ? baseOutline : 'rgba(0,0,0,0)'
 
-      map.addLayer({
-        id: 'buildings-fill',
-        type: 'fill',
-        source: VECTOR_SOURCE,
-        'source-layer': BUILDING_SOURCE_LAYER,
-        minzoom: 14,
-        paint: {
-          'fill-color': baseFill,
-          'fill-opacity': baseFillOpacity,
-          'fill-outline-color': baseOutlinePaint,
+      map.addLayer(
+        {
+          id: 'buildings-fill',
+          type: 'fill',
+          source: VECTOR_SOURCE,
+          'source-layer': BUILDING_SOURCE_LAYER,
+          minzoom: 14,
+          paint: {
+            'fill-color': baseFill,
+            'fill-opacity': baseFillOpacity,
+            'fill-outline-color': baseOutlinePaint,
+          },
         },
-      })
+        beforeSymbols
+      )
 
       const heightExpr: maplibregl.ExpressionSpecification = [
         'max', 8,
         ['coalesce', ['to-number', ['get', 'render_height']], 10],
       ] as unknown as maplibregl.ExpressionSpecification
 
-      map.addLayer({
-        id: 'buildings-extrusion',
-        type: 'fill-extrusion',
-        source: VECTOR_SOURCE,
-        'source-layer': BUILDING_SOURCE_LAYER,
-        minzoom: 14,
-        filter: ['!=', ['get', 'hide_3d'], true],
-        paint: {
-          'fill-extrusion-color': whiteModeRef.current ? '#ffffff' : '#94a3b8',
-          'fill-extrusion-height': heightExpr,
-          'fill-extrusion-base': ['coalesce', ['to-number', ['get', 'render_min_height']], 0] as maplibregl.ExpressionSpecification,
-          'fill-extrusion-opacity': showUnclassifiedBase ? 0.85 : 0,
+      map.addLayer(
+        {
+          id: 'buildings-extrusion',
+          type: 'fill-extrusion',
+          source: VECTOR_SOURCE,
+          'source-layer': BUILDING_SOURCE_LAYER,
+          minzoom: 14,
+          filter: ['!=', ['get', 'hide_3d'], true],
+          paint: {
+            'fill-extrusion-color': whiteModeRef.current ? '#ffffff' : '#94a3b8',
+            'fill-extrusion-height': heightExpr,
+            'fill-extrusion-base': ['coalesce', ['to-number', ['get', 'render_min_height']], 0] as maplibregl.ExpressionSpecification,
+            // Unklassifizierte Flächen (buildings-fill) steuern nur 2D; 3D-Extrusion immer sichtbar in 3D-Ansicht
+            'fill-extrusion-opacity': 0.88,
+          },
+          layout: { visibility: 'none' },
         },
-        layout: { visibility: 'none' },
-      })
+        beforeSymbols
+      )
 
       map.addSource(CLASSIFICATION_SOURCE, { type: 'geojson', data: EMPTY_FC })
       map.addLayer({
@@ -329,6 +412,13 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
         },
       })
 
+      basemapSnapshotRef.current = snapshotBasemapVisibility(map)
+      if (whiteModeRef.current) {
+        applyWhiteBasemap(map, true, basemapSnapshotRef.current)
+      } else {
+        applyViewerSymbolFilter(map, appModeRef.current)
+      }
+
       const handleClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
         const f = e.features?.[0]
         if (!f || f.id == null) return
@@ -337,8 +427,7 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
         const rawGeometry = f.geometry as GeoJSON.Geometry
         const clickPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat]
         const geometry = extractClickedPolygon(rawGeometry, clickPoint)
-        const shiftKey = (e.originalEvent as MouseEvent).shiftKey
-        onBuildingClickRef.current?.({ id: stringId, properties: props, geometry }, shiftKey)
+        onBuildingClickRef.current?.({ id: stringId, properties: props, geometry })
       }
       map.on('click', 'buildings-fill', handleClick)
       map.on('click', 'buildings-extrusion', handleClick)
@@ -351,7 +440,9 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
       // API kann Klassifizierungen liefern, bevor dieser Handler lief — der React-Effekt sieht die Quelle noch nicht.
       // Einmal synchron anwenden, sobald Quellen existieren.
       const clsSrc = map.getSource(CLASSIFICATION_SOURCE) as maplibregl.GeoJSONSource
-      clsSrc.setData(buildClassificationFC(classificationsRef.current, filtersRef.current))
+      clsSrc.setData(
+        buildClassificationFC(classificationsRef.current, filtersRef.current, appModeRef.current)
+      )
       const selSrc = map.getSource(SELECTION_SOURCE) as maplibregl.GeoJSONSource
       selSrc.setData(selectionFeatureCollection(selectedBuildingsRef.current))
 
@@ -394,8 +485,8 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     const map = mapRef.current
     const src = map?.getSource(CLASSIFICATION_SOURCE) as maplibregl.GeoJSONSource | undefined
     if (!src) return
-    src.setData(buildClassificationFC(classifications, filters))
-  }, [classifications, filters])
+    src.setData(buildClassificationFC(classifications, filters, appMode))
+  }, [classifications, filters, appMode])
 
   useEffect(() => {
     const map = mapRef.current
@@ -414,7 +505,7 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
     map.setPaintProperty('buildings-fill', 'fill-outline-color', showU ? baseOutline : 'rgba(0,0,0,0)')
     map.setPaintProperty('buildings-fill', 'fill-opacity', showU ? 0.9 : 0)
     map.setPaintProperty('buildings-extrusion', 'fill-extrusion-color', whiteMode ? '#ffffff' : '#94a3b8')
-    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-opacity', showU ? 0.85 : 0)
+    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-opacity', viewMode === '3d' ? 0.88 : 0)
     map.setLayoutProperty('buildings-fill', 'visibility', viewMode === '2d' ? 'visible' : 'none')
     map.setLayoutProperty('buildings-extrusion', 'visibility', viewMode === '3d' ? 'visible' : 'none')
     if (viewMode === '3d') {
@@ -428,9 +519,16 @@ export default function MapView({ onBuildingClick, filters, viewMode, whiteMode,
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map?.getLayer('osm-tiles-layer')) return
-    map.setLayoutProperty('osm-tiles-layer', 'visibility', whiteMode ? 'none' : 'visible')
-  }, [whiteMode])
+    const snap = basemapSnapshotRef.current
+    if (!map?.getLayer('buildings-fill') || !snap) return
+    if (whiteMode) {
+      applyWhiteBasemap(map, true, snap)
+    } else {
+      applyWhiteBasemap(map, false, snap)
+      hideDuplicateStyleBuildings(map)
+      applyViewerSymbolFilter(map, appMode)
+    }
+  }, [whiteMode, appMode])
 
   return (
     <div ref={mapContainerRef} className="w-full h-full" aria-label="Karte Berlin" />

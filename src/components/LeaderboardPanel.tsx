@@ -47,12 +47,12 @@ export default function LeaderboardPanel({ open, onClose }: LeaderboardPanelProp
             <ol className="space-y-2">
               {rows.map((r) => (
                 <li
-                  key={`${r.rank}-${r.emailMasked}`}
+                  key={`${r.rank}-${r.displayName}`}
                   className="border-border flex justify-between gap-2 border-b pb-2 text-sm last:border-0"
                 >
                   <span className="text-foreground">
                     <span className="text-muted-foreground mr-2">{r.rank}.</span>
-                    {r.emailMasked}
+                    {r.displayName}
                   </span>
                   <span className="font-medium tabular-nums">{r.score}</span>
                 </li>

@@ -16,7 +16,7 @@ interface AccountSettingsDialogProps {
 }
 
 export default function AccountSettingsDialog({ open, onClose }: AccountSettingsDialogProps) {
-  const { user, updateEmail, changePassword, deleteAccount } = useAuth()
+  const { user, updateDisplayName, updateEmail, changePassword, deleteAccount } = useAuth()
   const [emailPwd, setEmailPwd] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [oldPwd, setOldPwd] = useState('')
@@ -24,6 +24,7 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
   const [newPwd2, setNewPwd2] = useState('')
   const [deletePwd, setDeletePwd] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [displayNameInput, setDisplayNameInput] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -31,8 +32,9 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
   useEffect(() => {
     if (open && user?.email) {
       setNewEmail(user.email)
+      setDisplayNameInput(user.displayName ?? '')
     }
-  }, [open, user?.email])
+  }, [open, user?.email, user?.displayName])
 
   const resetForms = () => {
     setEmailPwd('')
@@ -42,6 +44,7 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
     setNewPwd2('')
     setDeletePwd('')
     setDeleteConfirm('')
+    setDisplayNameInput(user?.displayName ?? '')
     setMsg(null)
     setErr(null)
   }
@@ -50,6 +53,21 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
     if (!next) {
       onClose()
       resetForms()
+    }
+  }
+
+  const onSubmitDisplayName = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setErr(null)
+    setMsg(null)
+    setPending(true)
+    try {
+      await updateDisplayName(displayNameInput.trim())
+      setMsg('Anzeigename wurde gespeichert.')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Fehler')
+    } finally {
+      setPending(false)
     }
   }
 
@@ -120,6 +138,27 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
         <div className="space-y-6">
           {err && <p className="text-destructive text-sm">{err}</p>}
           {msg && !err && <p className="text-muted-foreground text-sm">{msg}</p>}
+
+          <form onSubmit={onSubmitDisplayName} className="space-y-3 border-b border-border pb-6">
+            <p className="font-medium">Anzeigename</p>
+            <p className="text-muted-foreground text-xs">
+              Sichtbar im Highscore (nicht deine E-Mail).
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="acc-display-name">Name</Label>
+              <Input
+                id="acc-display-name"
+                type="text"
+                autoComplete="nickname"
+                name="displayName"
+                value={displayNameInput}
+                onChange={(e) => setDisplayNameInput(e.target.value)}
+              />
+            </div>
+            <Button type="submit" size="sm" disabled={pending}>
+              Anzeigename speichern
+            </Button>
+          </form>
 
           <form onSubmit={onSubmitEmail} className="space-y-3 border-b border-border pb-6">
             <p className="font-medium">E-Mail ändern</p>

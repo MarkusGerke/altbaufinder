@@ -2,21 +2,41 @@ import type { BuildingClassification, ClassificationEntry } from '../types'
 
 const STORAGE_KEY = 'altbaufinder-classifications'
 
-/** Einzelnen API-/LocalStorage-Eintrag von 3er-Skala auf 5er-Skala heben. */
+/** Alte 5er-Werte und Legacy-Strings → aktuelles Modell (3 + kein_altbau). */
+const LEGACY_TO_NEW: Record<string, Exclude<BuildingClassification, null>> = {
+  stuck_perfekt: 'altbau_gruen',
+  stuck_schoen: 'altbau_gruen',
+  stuck_mittel: 'altbau_gelb',
+  stuck_teilweise: 'altbau_gelb',
+  entstuckt: 'altbau_rot',
+  original: 'altbau_gruen',
+  altbau_entstuckt: 'altbau_gelb',
+}
+
+function normalizeStoredClassification(
+  c: string | null | undefined
+): BuildingClassification | 'DROP' | 'KEEP_NULL' {
+  if (c === undefined || c === null) return 'KEEP_NULL'
+  if (c === '') return 'KEEP_NULL'
+  if (c === 'kein_altbau') return 'kein_altbau'
+  if (c === 'altbau_gruen' || c === 'altbau_gelb' || c === 'altbau_rot') {
+    return c
+  }
+  const mapped = LEGACY_TO_NEW[c]
+  if (mapped) return mapped
+  return 'DROP'
+}
+
+/** Einzelnen API-/LocalStorage-Eintrag migrieren (alte Skalen → 3 Stufen + kein_altbau). */
 export function migrateLegacyClassification(
   entry: ClassificationEntry
 ): ClassificationEntry | null {
-  const c = entry.classification as BuildingClassification | 'original' | 'altbau_entstuckt' | 'kein_altbau'
-  if (c === 'original') {
-    return { ...entry, classification: 'stuck_perfekt' }
-  }
-  if (c === 'altbau_entstuckt') {
-    return { ...entry, classification: 'stuck_teilweise' }
-  }
-  if (c === 'kein_altbau') {
-    return null
-  }
-  return entry
+  const c = entry.classification as string | null | undefined
+  const norm = normalizeStoredClassification(c)
+  if (norm === 'DROP') return null
+  if (norm === 'KEEP_NULL') return null
+  if (norm === entry.classification) return entry
+  return { ...entry, classification: norm }
 }
 
 function migrateId(oldId: string): string {

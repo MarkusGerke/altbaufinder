@@ -3,7 +3,12 @@ import { Menu } from 'lucide-react'
 import type { AppMode } from '../types'
 import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
-import { CLASSIFICATION_HEX, CLASSIFICATION_ORDER, CLASSIFICATION_SHORT } from '../classificationLabels'
+import {
+  CLASSIFICATION_HEX,
+  CLASSIFICATION_ORDER,
+  CLASSIFICATION_ORDER_WITH_KEIN,
+  CLASSIFICATION_SHORT,
+} from '../classificationLabels'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -12,20 +17,18 @@ import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
 export interface FilterState {
-  showStuckPerfekt: boolean
-  showStuckSchoen: boolean
-  showStuckMittel: boolean
-  showStuckTeilweise: boolean
-  showEntstuckt: boolean
+  showAltbauGruen: boolean
+  showAltbauGelb: boolean
+  showAltbauRot: boolean
+  showKeinAltbau: boolean
   showUnclassified: boolean
 }
 
 const FILTER_KEY: Record<Exclude<BuildingClassification, null>, keyof FilterState> = {
-  stuck_perfekt: 'showStuckPerfekt',
-  stuck_schoen: 'showStuckSchoen',
-  stuck_mittel: 'showStuckMittel',
-  stuck_teilweise: 'showStuckTeilweise',
-  entstuckt: 'showEntstuckt',
+  altbau_gruen: 'showAltbauGruen',
+  altbau_gelb: 'showAltbauGelb',
+  altbau_rot: 'showAltbauRot',
+  kein_altbau: 'showKeinAltbau',
 }
 
 interface ToolbarProps {
@@ -37,8 +40,6 @@ interface ToolbarProps {
   onViewModeChange: (mode: '2d' | '3d') => void
   whiteMode: boolean
   onWhiteModeChange: (value: boolean) => void
-  multiSelectMode: boolean
-  onMultiSelectModeChange: (value: boolean) => void
   onDeselectAll: () => void
   selectedCount: number
   onExport: () => void
@@ -49,14 +50,18 @@ function ClassificationFilterToggles({
   filters,
   setFilter,
   idPrefix,
+  appMode,
 }: {
   filters: FilterState
   setFilter: (key: keyof FilterState, value: boolean) => void
   idPrefix: string
+  appMode: AppMode
 }) {
+  const order =
+    appMode === 'editor' ? CLASSIFICATION_ORDER_WITH_KEIN : CLASSIFICATION_ORDER
   return (
     <>
-      {CLASSIFICATION_ORDER.map((cls) => {
+      {order.map((cls) => {
         const key = FILTER_KEY[cls]
         const hex = CLASSIFICATION_HEX[cls]
         const id = `${idPrefix}-f-${cls}`
@@ -86,14 +91,18 @@ function ClassificationFilterDots({
   filters,
   setFilter,
   idPrefix,
+  appMode,
 }: {
   filters: FilterState
   setFilter: (key: keyof FilterState, value: boolean) => void
   idPrefix: string
+  appMode: AppMode
 }) {
+  const order =
+    appMode === 'editor' ? CLASSIFICATION_ORDER_WITH_KEIN : CLASSIFICATION_ORDER
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {CLASSIFICATION_ORDER.map((cls) => {
+      {order.map((cls) => {
         const key = FILTER_KEY[cls]
         const hex = CLASSIFICATION_HEX[cls]
         const id = `${idPrefix}-d-${cls}`
@@ -150,8 +159,6 @@ export default function Toolbar({
   onViewModeChange,
   whiteMode,
   onWhiteModeChange,
-  multiSelectMode,
-  onMultiSelectModeChange,
   onDeselectAll,
   selectedCount,
   onExport,
@@ -192,7 +199,12 @@ export default function Toolbar({
 
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-muted-foreground text-sm">Filter:</span>
-        <ClassificationFilterToggles filters={filters} setFilter={setFilter} idPrefix={idPrefix} />
+        <ClassificationFilterToggles
+          filters={filters}
+          setFilter={setFilter}
+          idPrefix={idPrefix}
+          appMode={appMode}
+        />
         <div className="flex items-center gap-2">
           <Checkbox
             id={`${idPrefix}-uncl`}
@@ -222,16 +234,11 @@ export default function Toolbar({
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground text-sm">Auswahl:</span>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={`${idPrefix}-multi`}
-            checked={multiSelectMode}
-            onCheckedChange={(c) => onMultiSelectModeChange(c === true)}
-          />
-          <Label htmlFor={`${idPrefix}-multi`} className="cursor-pointer font-normal">
-            Mehrfach
-          </Label>
-        </div>
+        {appMode === 'editor' && (
+          <span className="text-muted-foreground max-w-[14rem] text-xs">
+            Mehrfachauswahl: Klick hinzufügen, erneut klicken zum Entfernen.
+          </span>
+        )}
         {selectedCount > 0 && (
           <Button type="button" variant="outline" size="sm" onClick={onDeselectAll}>
             Abwählen ({selectedCount})
@@ -299,7 +306,12 @@ export default function Toolbar({
             <Separator />
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-muted-foreground shrink-0 text-sm">Filter:</span>
-              <ClassificationFilterDots filters={filters} setFilter={setFilter} idPrefix="mob" />
+              <ClassificationFilterDots
+                filters={filters}
+                setFilter={setFilter}
+                idPrefix="mob"
+                appMode={appMode}
+              />
               <div className="flex items-center gap-1">
                 <Checkbox
                   id="mob-uncl"
@@ -321,16 +333,6 @@ export default function Toolbar({
                 />
                 <Label htmlFor="mob-white" className="cursor-pointer font-normal">
                   Weißmodus
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="mob-multi"
-                  checked={multiSelectMode}
-                  onCheckedChange={(c) => onMultiSelectModeChange(c === true)}
-                />
-                <Label htmlFor="mob-multi" className="cursor-pointer font-normal">
-                  Mehrfach
                 </Label>
               </div>
               {selectedCount > 0 && (

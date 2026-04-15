@@ -22,6 +22,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
   const [authView, setAuthView] = useState<'tabs' | 'forgot'>('tabs')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [forgotSent, setForgotSent] = useState(false)
@@ -45,7 +46,12 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
     setPending(true)
     try {
       if (mode === 'login') await login(email.trim(), password)
-      else await register(email.trim(), password)
+      else
+        await register(
+          email.trim(),
+          password,
+          displayName.trim() !== '' ? displayName.trim() : undefined
+        )
       setPassword('')
       onClose()
     } catch (err) {
@@ -161,8 +167,10 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                   mode="register"
                   email={email}
                   password={password}
+                  displayName={displayName}
                   setEmail={setEmail}
                   setPassword={setPassword}
+                  setDisplayName={setDisplayName}
                   displayError={displayError}
                   pending={pending}
                   onSubmit={submit}
@@ -180,8 +188,10 @@ function AuthFormInner({
   mode,
   email,
   password,
+  displayName,
   setEmail,
   setPassword,
+  setDisplayName,
   displayError,
   pending,
   onSubmit,
@@ -190,8 +200,10 @@ function AuthFormInner({
   mode: 'login' | 'register'
   email: string
   password: string
+  displayName?: string
   setEmail: (v: string) => void
   setPassword: (v: string) => void
+  setDisplayName?: (v: string) => void
   displayError: string | null
   pending: boolean
   onSubmit: (e: React.FormEvent) => void
@@ -227,6 +239,23 @@ function AuthFormInner({
           onChange={(e) => setPassword(e.target.value)}
         />
       </div>
+      {mode === 'register' && setDisplayName !== undefined && displayName !== undefined && (
+        <div className="space-y-2">
+          <Label htmlFor="auth-display-name">Anzeigename (optional)</Label>
+          <Input
+            id="auth-display-name"
+            type="text"
+            name="displayName"
+            autoComplete="nickname"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Leer lassen für zufälligen Namen"
+          />
+          <p className="text-muted-foreground text-xs">
+            Wird im Highscore angezeigt (nicht deine E-Mail).
+          </p>
+        </div>
+      )}
       {displayError && <p className="text-destructive text-sm">{displayError}</p>}
       {mode === 'login' && onForgotPassword && (
         <div className="flex justify-end">

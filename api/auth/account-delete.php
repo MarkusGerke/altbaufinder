@@ -51,6 +51,8 @@ try {
         exit;
     }
 
+    // Nutzerzeile löschen → user_building_marks per FK CASCADE mit weg (persönliche Highscore-Zähler).
+    // Einträge in classifications bleiben bestehen (globale Gebäude-Markierung pro building_id, ohne user_id).
     $del = $pdo->prepare('DELETE FROM users WHERE id = :id');
     $del->execute([':id' => $uid]);
     echo json_encode(['ok' => true, 'message' => 'Konto wurde gelöscht.'], JSON_UNESCAPED_UNICODE);

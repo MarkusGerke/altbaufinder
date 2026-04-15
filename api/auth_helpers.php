@@ -98,6 +98,7 @@ function ensure_marks_tables(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
     ensure_users_password_reset_columns($pdo);
+    ensure_users_display_name($pdo);
 }
 
 /** Spalten für Passwort-zurücksetzen (bestehende Installationen per ALTER nachziehen). */
@@ -112,6 +113,79 @@ function ensure_users_password_reset_columns(PDO $pdo): void {
     } catch (Throwable $e) {
         // Spalte existiert vermutlich schon
     }
+}
+
+/** Deutschsprachige Fantasienamen für fehlenden Anzeigenamen (Architektur-/Stilbegriffe). */
+function fantasy_display_name_pool(): array {
+    return [
+        'Barockgiebel', 'Gründerzeit', 'Jugendstil', 'Sprossenfenster', 'Zierfries',
+        'Risalit', 'Erker', 'Dachgaube', 'Stuckkartusche', 'Konsolstein',
+        'Sandsteinfassade', 'Zwerchhaus', 'Segmentbogen', 'Schieferdach', 'Voluten',
+        'Putzfassade', 'Satteldach', 'Stuckgesims', 'Bauzeit', 'Fassadenband',
+        'Klappläden', 'Zwerchgiebel', 'Rundbogen', 'Säulenportal', 'Fensterachse',
+        'Dachreiter', 'Mittelrisalit', 'Ziegelrot', 'Stuckrose', 'Giebelfeld',
+        'Kaiserstuck', 'Loggia', 'Balkonbrüstung', 'Fassadengliederung',
+    ];
+}
+
+function ensure_users_display_name(PDO $pdo): void {
+    try {
+        $pdo->exec(
+            'ALTER TABLE users ADD COLUMN display_name VARCHAR(64) NULL UNIQUE AFTER email'
+        );
+    } catch (Throwable $e) {
+        // Spalte existiert vermutlich schon
+    }
+    try {
+        $rows = $pdo->query(
+            "SELECT id FROM users WHERE display_name IS NULL OR TRIM(display_name) = ''"
+        )->fetchAll();
+        foreach ($rows as $row) {
+            $id = (int) $row['id'];
+            $name = generate_unique_display_name($pdo);
+            $u = $pdo->prepare('UPDATE users SET display_name = :d WHERE id = :id');
+            $u->execute([':d' => $name, ':id' => $id]);
+        }
+    } catch (Throwable $e) {
+        // Backfill optional fehlschlagen lassen
+    }
+}
+
+function generate_unique_display_name(PDO $pdo): string {
+    $pool = fantasy_display_name_pool();
+    for ($attempt = 0; $attempt < 100; $attempt++) {
+        $base = $pool[random_int(0, count($pool) - 1)];
+        $candidate = $attempt > 20 ? $base . (string) random_int(10, 99999) : $base;
+        if (strlen($candidate) > 64) {
+            $candidate = substr($base, 0, 32) . random_int(1000, 99999);
+        }
+        $chk = $pdo->prepare('SELECT id FROM users WHERE display_name = :d LIMIT 1');
+        $chk->execute([':d' => $candidate]);
+        if (!$chk->fetch()) {
+            return $candidate;
+        }
+    }
+    return 'Mitspieler' . (string) random_int(100000, 999999);
+}
+
+/**
+ * @return string|null gültiger Anzeigename oder null bei ungültiger Eingabe
+ */
+function normalize_display_name_input(?string $raw): ?string {
+    if ($raw === null) {
+        return null;
+    }
+    $s = trim(preg_replace('/\s+/u', ' ', $raw));
+    if ($s === '') {
+        return null;
+    }
+    if (mb_strlen($s) > 48) {
+        $s = mb_substr($s, 0, 48);
+    }
+    if (!preg_match('/^[\p{L}\d _\-.,]+$/u', $s)) {
+        return null;
+    }
+    return $s;
 }
 
 function mask_email(string $email): string {

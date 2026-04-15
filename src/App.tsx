@@ -15,11 +15,10 @@ import type { ClassificationEntry } from './types'
 import { segmentStorageKey } from '@/utils/segmentStorageKey'
 
 const DEFAULT_FILTERS: FilterState = {
-  showStuckPerfekt: true,
-  showStuckSchoen: true,
-  showStuckMittel: true,
-  showStuckTeilweise: true,
-  showEntstuckt: true,
+  showAltbauGruen: true,
+  showAltbauGelb: true,
+  showAltbauRot: true,
+  showKeinAltbau: true,
   showUnclassified: false,
 }
 
@@ -50,27 +49,22 @@ function App() {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
   const [whiteMode, setWhiteMode] = useState(false)
   const [selectedBuildings, setSelectedBuildings] = useState<SelectedBuildingGeo[]>([])
-  const [multiSelectMode, setMultiSelectMode] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { classifications, importClassifications } = useClassification()
 
-  const onBuildingClick = useCallback(
-    (building: SelectedBuildingGeo, shiftKey: boolean) => {
-      setSelectedBuildings((prev) => {
-        const isMulti = shiftKey || multiSelectMode
-        const clickKey = segmentStorageKey(building.id, building.geometry)
-        const existsByKey = prev.some((b) => segmentStorageKey(b.id, b.geometry) === clickKey)
-        if (isMulti) {
-          if (existsByKey) {
-            return prev.filter((b) => segmentStorageKey(b.id, b.geometry) !== clickKey)
-          }
-          return [...prev, building]
+  const onBuildingClick = useCallback((building: SelectedBuildingGeo) => {
+    setSelectedBuildings((prev) => {
+      const clickKey = segmentStorageKey(building.id, building.geometry)
+      const existsByKey = prev.some((b) => segmentStorageKey(b.id, b.geometry) === clickKey)
+      if (appMode === 'editor') {
+        if (existsByKey) {
+          return prev.filter((b) => segmentStorageKey(b.id, b.geometry) !== clickKey)
         }
-        return [building]
-      })
-    },
-    [multiSelectMode]
-  )
+        return [...prev, building]
+      }
+      return [building]
+    })
+  }, [appMode])
 
   const handleExport = useCallback(() => {
     const payload = { exportedAt: new Date().toISOString(), classifications }
@@ -166,8 +160,6 @@ function App() {
         onViewModeChange={setViewMode}
         whiteMode={whiteMode}
         onWhiteModeChange={setWhiteMode}
-        multiSelectMode={multiSelectMode}
-        onMultiSelectModeChange={setMultiSelectMode}
         onDeselectAll={() => setSelectedBuildings([])}
         selectedCount={selectedBuildings.length}
         onExport={handleExport}
@@ -188,6 +180,7 @@ function App() {
           viewMode={viewMode}
           whiteMode={whiteMode}
           selectedBuildings={selectedBuildings}
+          appMode={appMode}
         />
         {selectedBuildings.length > 0 && (
           <>

@@ -28,7 +28,7 @@ if ($uid === null) {
 try {
     $pdo = getDbConnection();
     ensure_marks_tables($pdo);
-    $stmt = $pdo->prepare('SELECT id, email FROM users WHERE id = :id LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, email, display_name FROM users WHERE id = :id LIMIT 1');
     $stmt->execute([':id' => $uid]);
     $row = $stmt->fetch();
     if (!$row) {
@@ -39,10 +39,17 @@ try {
     $cnt = $pdo->prepare('SELECT COUNT(*) AS c FROM user_building_marks WHERE user_id = :id');
     $cnt->execute([':id' => $uid]);
     $score = (int) ($cnt->fetch()['c'] ?? 0);
+    $dn = isset($row['display_name']) && $row['display_name'] !== ''
+        ? (string) $row['display_name']
+        : ('Nutzer' . (int) $row['id']);
     echo json_encode([
-        'user'  => ['id' => (int) $row['id'], 'email' => $row['email']],
+        'user'  => [
+            'id'          => (int) $row['id'],
+            'email'       => $row['email'],
+            'displayName' => $dn,
+        ],
         'score' => $score,
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Fehler', 'detail' => $e->getMessage()]);

@@ -43,7 +43,8 @@ if ($email === '' || !is_string($password)) {
 
 try {
     $pdo = getDbConnection();
-    $stmt = $pdo->prepare('SELECT id, email, password_hash FROM users WHERE email = :e LIMIT 1');
+    ensure_marks_tables($pdo);
+    $stmt = $pdo->prepare('SELECT id, email, display_name, password_hash FROM users WHERE email = :e LIMIT 1');
     $stmt->execute([':e' => $email]);
     $row = $stmt->fetch();
     if (!$row || !password_verify($password, $row['password_hash'])) {
@@ -52,11 +53,14 @@ try {
         exit;
     }
     $id = (int) $row['id'];
+    $dn = isset($row['display_name']) && $row['display_name'] !== ''
+        ? (string) $row['display_name']
+        : ('Nutzer' . $id);
     $token = jwt_encode(['sub' => $id], $secret);
     echo json_encode([
         'token' => $token,
-        'user'  => ['id' => $id, 'email' => $row['email']],
-    ]);
+        'user'  => ['id' => $id, 'email' => $row['email'], 'displayName' => $dn],
+    ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Anmeldung fehlgeschlagen', 'detail' => $e->getMessage()]);

@@ -4,7 +4,11 @@ import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
 import type { SelectedBuildingGeo } from './MapView'
 import { segmentStorageKey } from '../utils/segmentStorageKey'
-import { CLASSIFICATION_HEX, CLASSIFICATION_LABELS, CLASSIFICATION_ORDER } from '../classificationLabels'
+import {
+  CLASSIFICATION_HEX,
+  CLASSIFICATION_LABELS,
+  CLASSIFICATION_ORDER,
+} from '../classificationLabels'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -20,11 +24,10 @@ interface BuildingDetailPanelProps {
 }
 
 const BTN_RING: Record<Exclude<BuildingClassification, null>, string> = {
-  stuck_perfekt: 'ring-green-400',
-  stuck_schoen: 'ring-lime-300',
-  stuck_mittel: 'ring-yellow-400',
-  stuck_teilweise: 'ring-orange-400',
-  entstuckt: 'ring-red-400',
+  altbau_gruen: 'ring-green-500',
+  altbau_gelb: 'ring-yellow-400',
+  altbau_rot: 'ring-red-500',
+  kein_altbau: 'ring-neutral-600',
 }
 
 function ClassificationButtons({
@@ -39,6 +42,7 @@ function ClassificationButtons({
       {CLASSIFICATION_ORDER.map((cls, i) => {
         const active = activeClassification === cls
         const hex = CLASSIFICATION_HEX[cls]
+        const darkLabel = cls === 'altbau_gelb'
         return (
           <Button
             key={cls}
@@ -53,13 +57,27 @@ function ClassificationButtons({
             )}
             style={{
               backgroundColor: hex,
-              color: cls === 'stuck_schoen' || cls === 'stuck_mittel' ? '#1e293b' : '#fff',
+              color: darkLabel ? '#1e293b' : '#fff',
             }}
           >
             {i + 1}
           </Button>
         )
       })}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        title={CLASSIFICATION_LABELS.kein_altbau}
+        onClick={() => onClassify('kein_altbau')}
+        className={cn(
+          'min-w-[2.25rem] border-border bg-neutral-900 text-white hover:bg-neutral-800',
+          activeClassification === 'kein_altbau' &&
+            'ring-2 ring-offset-2 ring-offset-background ring-neutral-600'
+        )}
+      >
+        K
+      </Button>
       <Button type="button" variant="secondary" size="sm" onClick={() => onClassify(null)}>
         Zurücksetzen
       </Button>
@@ -135,7 +153,9 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
         <>
           <Separator className="my-4" />
           <div className="space-y-2">
-            <p className="text-muted-foreground text-xs">Stufe wählen (1 = schönster Stuck … 5 = entstuckt):</p>
+            <p className="text-muted-foreground text-xs">
+              Stufe wählen (1–3: Altbau-Qualität, K = kein Altbau, nur in der Editor-Karte sichtbar):
+            </p>
             <ClassificationButtons
               onClassify={(c) => setClassification(storageKey, c, undefined, building.geometry)}
               activeClassification={classification}

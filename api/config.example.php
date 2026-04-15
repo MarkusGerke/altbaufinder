@@ -25,4 +25,9 @@ return [
      */
     'mail_from'      => 'noreply@deine-domain.de',
     'public_app_url' => 'https://deine-domain.de',
+    /*
+     * Hinweis Datenschutz / Konto-Löschen: Beim Löschen eines Nutzers entfallen die Zeilen in
+     * user_building_marks (Scores). Tabelle classifications (Farbklassifikationen pro Gebäude) ist global
+     * und bleibt unabhängig vom Konto erhalten.
+     */
 ];

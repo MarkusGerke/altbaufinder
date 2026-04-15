@@ -1,9 +1,8 @@
 export type BuildingClassification =
-  | 'stuck_perfekt'
-  | 'stuck_schoen'
-  | 'stuck_mittel'
-  | 'stuck_teilweise'
-  | 'entstuckt'
+  | 'altbau_gruen'
+  | 'altbau_gelb'
+  | 'altbau_rot'
+  | 'kein_altbau'
   | null
 
 export interface ClassificationEntry {

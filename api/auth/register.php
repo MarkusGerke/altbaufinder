@@ -34,6 +34,7 @@ if (!is_array($input)) {
 
 $email = normalize_email($input['email'] ?? '');
 $password = $input['password'] ?? '';
+$requestedName = normalize_display_name_input(isset($input['displayName']) ? (string) $input['displayName'] : null);
 
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     http_response_code(400);
@@ -51,14 +52,38 @@ try {
     $pdo = getDbConnection();
     ensure_marks_tables($pdo);
     $hash = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $pdo->prepare('INSERT INTO users (email, password_hash) VALUES (:e, :h)');
-    $stmt->execute([':e' => $email, ':h' => $hash]);
+
+    $displayName = $requestedName;
+    if ($displayName === null) {
+        $displayName = generate_unique_display_name($pdo);
+    } else {
+        $chk = $pdo->prepare('SELECT id FROM users WHERE display_name = :d LIMIT 1');
+        $chk->execute([':d' => $displayName]);
+        if ($chk->fetch()) {
+            $displayName = $displayName . random_int(1, 99);
+            if (strlen($displayName) > 64) {
+                $displayName = mb_substr($requestedName, 0, 40) . random_int(10, 99);
+            }
+            $chk2 = $pdo->prepare('SELECT id FROM users WHERE display_name = :d LIMIT 1');
+            $chk2->execute([':d' => $displayName]);
+            if ($chk2->fetch()) {
+                $displayName = generate_unique_display_name($pdo);
+            }
+        }
+    }
+
+    $stmt = $pdo->prepare('INSERT INTO users (email, display_name, password_hash) VALUES (:e, :dn, :h)');
+    $stmt->execute([':e' => $email, ':dn' => $displayName, ':h' => $hash]);
     $id = (int) $pdo->lastInsertId();
     $token = jwt_encode(['sub' => $id], $secret);
     echo json_encode([
         'token' => $token,
-        'user'  => ['id' => $id, 'email' => $email],
-    ]);
+        'user'  => [
+            'id'          => $id,
+            'email'       => $email,
+            'displayName' => $displayName,
+        ],
+    ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     if ($e->getCode() === 23000 || str_contains($e->getMessage(), 'Duplicate')) {
         http_response_code(409);
