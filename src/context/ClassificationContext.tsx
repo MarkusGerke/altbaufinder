@@ -22,7 +22,13 @@ const API_ENABLED = !!import.meta.env.VITE_API_URL
 
 interface ClassificationContextValue {
   classifications: ClassificationState
-  setClassification: (buildingId: string, classification: BuildingClassification, yearOfConstruction?: number | null, geometry?: GeoJSON.Geometry | null) => void
+  setClassification: (
+    buildingId: string,
+    classification: BuildingClassification,
+    yearOfConstruction?: number | null,
+    geometry?: GeoJSON.Geometry | null,
+    vectorFeatureId?: number | null
+  ) => void
   getClassification: (buildingId: string) => BuildingClassification
   getYearOfConstruction: (buildingId: string) => number | null | undefined
   setYearOfConstruction: (buildingId: string, year: number | null) => void
@@ -65,18 +71,30 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
   }, [])
 
-  const setClassification = useCallback((buildingId: string, classification: BuildingClassification, yearOfConstruction?: number | null, geometry?: GeoJSON.Geometry | null) => {
+  const setClassification = useCallback(
+    (
+      buildingId: string,
+      classification: BuildingClassification,
+      yearOfConstruction?: number | null,
+      geometry?: GeoJSON.Geometry | null,
+      vectorFeatureId?: number | null
+    ) => {
     setClassifications((prev) => {
       const next = { ...prev }
       if (classification === null) {
         delete next[buildingId]
       } else {
         const existing = prev[buildingId]
+        const nextVectorId =
+          vectorFeatureId !== undefined && vectorFeatureId !== null
+            ? vectorFeatureId
+            : existing?.vectorFeatureId
         next[buildingId] = {
           classification,
           yearOfConstruction: yearOfConstruction !== undefined ? yearOfConstruction : (existing?.yearOfConstruction ?? null),
           lastModified: Date.now(),
           geometry: geometry !== undefined ? geometry : (existing?.geometry ?? null),
+          ...(nextVectorId !== undefined && nextVectorId !== null ? { vectorFeatureId: nextVectorId } : {}),
         }
       }
       return next

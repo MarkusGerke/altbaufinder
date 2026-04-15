@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useClassification } from '../context/ClassificationContext'
@@ -61,6 +61,7 @@ const CUSTOM_MAP_LAYER_IDS = new Set([
   'buildings-extrusion',
   'classification-fill',
   'classification-outline',
+  'classification-extrusion',
   'selection-fill',
   'selection-outline',
 ])
@@ -150,6 +151,25 @@ function tileIdToStringId(tileId: number): string {
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
 
+/** Mindestens ein Anzeige-Filter aktiv (sonst keine 3D-Gebäude / keine Vektor-Extrusion). */
+export function hasActiveBuildingFilters(filters: FilterState, appMode: AppMode): boolean {
+  if (appMode === 'viewer') {
+    return (
+      filters.showAltbauGruen ||
+      filters.showAltbauGelb ||
+      filters.showAltbauRot ||
+      filters.showUnclassified
+    )
+  }
+  return (
+    filters.showAltbauGruen ||
+    filters.showAltbauGelb ||
+    filters.showAltbauRot ||
+    filters.showKeinAltbau ||
+    filters.showUnclassified
+  )
+}
+
 function classificationVisible(
   c: ClassificationEntry['classification'],
   filters: FilterState,
@@ -188,6 +208,55 @@ function buildClassificationFC(
     })
   }
   return { type: 'FeatureCollection', features }
+}
+
+/**
+ * Nur die Extrusions-Layer vor die Grenz-Linie ziehen (über Bridge-/Gleis-Layern).
+ * Fill-/Auswahl-Layer nicht mitverschieben: sonst kann MapLibre 5 bei Pitch die Karte schwarz rendern.
+ */
+function repositionExtrusionLayersBeforeBoundary(map: maplibregl.Map): void {
+  const anchor = map.getLayer('boundary_3')
+    ? 'boundary_3'
+    : map.getLayer('boundary_2')
+      ? 'boundary_2'
+      : null
+  if (!anchor) return
+  for (const id of ['buildings-extrusion', 'classification-extrusion'] as const) {
+    if (map.getLayer(id)) map.moveLayer(id, anchor)
+  }
+}
+
+function syncVectorFeatureStates(
+  map: maplibregl.Map,
+  classifications: Record<string, ClassificationEntry>,
+  prevIdsRef: { current: Set<number> },
+): void {
+  const current = new Set<number>()
+  for (const entry of Object.values(classifications)) {
+    if (entry.vectorFeatureId != null) current.add(entry.vectorFeatureId)
+  }
+  for (const id of prevIdsRef.current) {
+    if (!current.has(id)) {
+      try {
+        map.removeFeatureState({ source: VECTOR_SOURCE, sourceLayer: BUILDING_SOURCE_LAYER, id })
+      } catch {
+        /* Kacheln evtl. nicht geladen */
+      }
+    }
+  }
+  for (const entry of Object.values(classifications)) {
+    if (entry.vectorFeatureId != null && entry.classification) {
+      try {
+        map.setFeatureState(
+          { source: VECTOR_SOURCE, sourceLayer: BUILDING_SOURCE_LAYER, id: entry.vectorFeatureId },
+          { classified: true, cls: entry.classification },
+        )
+      } catch {
+        /* Kacheln evtl. nicht geladen */
+      }
+    }
+  }
+  prevIdsRef.current = current
 }
 
 const OVERLAY_FILL_COLOR: maplibregl.ExpressionSpecification = [
@@ -235,6 +304,8 @@ export interface SelectedBuildingGeo {
   id: string
   properties: Record<string, unknown>
   geometry: GeoJSON.Geometry
+  /** `feature.id` aus der MapLibre-Vektorkachel (für Vektor-Feature-State). */
+  vectorFeatureId?: number
 }
 
 interface MapViewProps {
@@ -258,6 +329,104 @@ function selectionFeatureCollection(selected: SelectedBuildingGeo[]): GeoJSON.Fe
   }
 }
 
+interface MapViewPaintInput {
+  filters: FilterState
+  viewMode: '2d' | '3d'
+  whiteMode: boolean
+  appMode: AppMode
+  /** Anzahl sichtbarer Klassifikations-Features (GeoJSON); 0 → in 3D neutrale Vektor-Würfel zeigen, wenn „Unklassifiziert“ aus ist. */
+  classifiedVisibleCount: number
+}
+
+/** 2D/3D: Kamera immer setzen; Paint nur wenn Custom-Layer existieren (ohne `isStyleLoaded()` — in MapLibre 5 kann das sonst dauerhaft false bleiben und 3D blockieren). */
+function applyMapViewPaint(map: maplibregl.Map, input: MapViewPaintInput): void {
+  const { filters, viewMode, whiteMode, appMode, classifiedVisibleCount } = input
+
+  if (viewMode === '3d') {
+    map.setPitch(60)
+    map.setBearing(30)
+  } else {
+    map.setPitch(0)
+    map.setBearing(0)
+  }
+
+  const hasFill = !!map.getLayer('buildings-fill')
+  const hasExtr = !!map.getLayer('buildings-extrusion')
+  if (!hasFill && !hasExtr) {
+    return
+  }
+  const active = hasActiveBuildingFilters(filters, appMode)
+  const baseFill = whiteMode ? '#ffffff' : '#94a3b8'
+  const baseOutline = whiteMode ? '#e2e8f0' : '#64748b'
+  /** 3D-Extrusion auf weißem Hintergrund sichtbar halten (nicht #fff auf #fff). */
+  const extrusionFillColor = whiteMode ? '#64748b' : baseFill
+  const showU = filters.showUnclassified
+  /** Ohne sichtbare Klassifikations-Polygone sonst komplett leere 3D-Stadt bei showUnclassified=false. */
+  const showVectorUnclassified =
+    active && (showU || (viewMode === '3d' && classifiedVisibleCount === 0))
+  const vecOpac = showVectorUnclassified ? 0.88 : 0
+
+  /** 2D: Unklassifizierte OSM-Grundrisse nur wenn „Unklassifiziert“ aktiv. */
+  const fillOpacity2d = showU ? 0.9 : 0
+
+  if (hasFill) {
+    map.setPaintProperty('buildings-fill', 'fill-color', baseFill)
+    map.setPaintProperty('buildings-fill', 'fill-outline-color', showU ? baseOutline : 'rgba(0,0,0,0)')
+    map.setPaintProperty('buildings-fill', 'fill-opacity', viewMode === '2d' ? fillOpacity2d : 0)
+    map.setLayoutProperty('buildings-fill', 'visibility', viewMode === '2d' ? 'visible' : 'none')
+  }
+
+  const heightExpr: maplibregl.ExpressionSpecification = [
+    'max', 8,
+    ['coalesce', ['to-number', ['get', 'render_height']], 10],
+  ] as unknown as maplibregl.ExpressionSpecification
+
+  /** coalesce: fehlender feature-state darf nicht mit true kollidieren (MapLibre 5). */
+  const heightWithClass: maplibregl.ExpressionSpecification = [
+    'case',
+    ['==', ['coalesce', ['feature-state', 'classified'], false], true],
+    0,
+    heightExpr,
+  ] as unknown as maplibregl.ExpressionSpecification
+
+  const basePaint = ['coalesce', ['to-number', ['get', 'render_min_height']], 0] as maplibregl.ExpressionSpecification
+
+  /**
+   * MapLibre 5: fill-extrusion-opacity unterstützt keine Data-Expressions (kein case/feature-state).
+   * Log: "fill-extrusion-opacity: data expressions not supported" — deshalb nur Skalar.
+   * Klassifizierte Vektor-Flächen: Höhe 0 über heightWithClass, nicht über geteilte Opacity.
+   */
+  const show3d = viewMode === '3d' && active
+
+  if (hasExtr) {
+    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-height', heightWithClass)
+    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-base', basePaint)
+    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-color', extrusionFillColor)
+    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-opacity', vecOpac)
+
+    map.setLayoutProperty('buildings-extrusion', 'visibility', show3d ? 'visible' : 'none')
+  }
+  if (map.getLayer('classification-extrusion')) {
+    map.setLayoutProperty('classification-extrusion', 'visibility', show3d ? 'visible' : 'none')
+    map.setPaintProperty('classification-extrusion', 'fill-extrusion-color', OVERLAY_FILL_COLOR)
+    map.setPaintProperty('classification-extrusion', 'fill-extrusion-opacity', show3d ? 0.88 : 0)
+  }
+
+  const overlay2d = viewMode === '2d' ? 'visible' : 'none'
+  if (map.getLayer('classification-fill')) {
+    map.setLayoutProperty('classification-fill', 'visibility', overlay2d)
+  }
+  if (map.getLayer('classification-outline')) {
+    map.setLayoutProperty('classification-outline', 'visibility', overlay2d)
+  }
+  if (map.getLayer('selection-fill')) {
+    map.setLayoutProperty('selection-fill', 'visibility', overlay2d)
+  }
+  if (map.getLayer('selection-outline')) {
+    map.setLayoutProperty('selection-outline', 'visibility', overlay2d)
+  }
+}
+
 export default function MapView({
   onBuildingClick,
   filters,
@@ -271,17 +440,24 @@ export default function MapView({
   const { classifications } = useClassification()
   const classificationsRef = useRef(classifications)
   classificationsRef.current = classifications
+  const classifiedVisibleCount = useMemo(
+    () => buildClassificationFC(classifications, filters, appMode).features.length,
+    [classifications, filters, appMode],
+  )
   const filtersRef = useRef(filters)
   filtersRef.current = filters
   const appModeRef = useRef(appMode)
   appModeRef.current = appMode
   const whiteModeRef = useRef(whiteMode)
   whiteModeRef.current = whiteMode
+  const viewModeRef = useRef(viewMode)
+  viewModeRef.current = viewMode
   const onBuildingClickRef = useRef(onBuildingClick)
   onBuildingClickRef.current = onBuildingClick
   const selectedBuildingsRef = useRef(selectedBuildings)
   selectedBuildingsRef.current = selectedBuildings
   const basemapSnapshotRef = useRef<Map<string, string | undefined> | null>(null)
+  const prevVectorFeatureIdsRef = useRef<Set<number>>(new Set())
 
   useEffect(() => {
     if (!mapContainerRef.current) return
@@ -337,7 +513,6 @@ export default function MapView({
           type: 'fill',
           source: VECTOR_SOURCE,
           'source-layer': BUILDING_SOURCE_LAYER,
-          minzoom: 14,
           paint: {
             'fill-color': baseFill,
             'fill-opacity': baseFillOpacity,
@@ -352,20 +527,20 @@ export default function MapView({
         ['coalesce', ['to-number', ['get', 'render_height']], 10],
       ] as unknown as maplibregl.ExpressionSpecification
 
+      // Kein feature-state in der Erst-Definition: sonst kann addLayer in MapLibre 5 fehlschlagen —
+      // der Handler bricht ab → nur buildings-fill existiert, buildings-extrusion fehlt (Logs: hasExtr:false).
       map.addLayer(
         {
           id: 'buildings-extrusion',
           type: 'fill-extrusion',
           source: VECTOR_SOURCE,
           'source-layer': BUILDING_SOURCE_LAYER,
-          minzoom: 14,
           filter: ['!=', ['get', 'hide_3d'], true],
           paint: {
-            'fill-extrusion-color': whiteModeRef.current ? '#ffffff' : '#94a3b8',
+            'fill-extrusion-color': whiteModeRef.current ? '#64748b' : '#94a3b8',
             'fill-extrusion-height': heightExpr,
             'fill-extrusion-base': ['coalesce', ['to-number', ['get', 'render_min_height']], 0] as maplibregl.ExpressionSpecification,
-            // Unklassifizierte Flächen (buildings-fill) steuern nur 2D; 3D-Extrusion immer sichtbar in 3D-Ansicht
-            'fill-extrusion-opacity': 0.88,
+            'fill-extrusion-opacity': 0,
           },
           layout: { visibility: 'none' },
         },
@@ -390,6 +565,19 @@ export default function MapView({
           'line-color': '#64748b',
           'line-width': 1,
         },
+      })
+
+      map.addLayer({
+        id: 'classification-extrusion',
+        type: 'fill-extrusion',
+        source: CLASSIFICATION_SOURCE,
+        paint: {
+          'fill-extrusion-color': OVERLAY_FILL_COLOR,
+          'fill-extrusion-height': 14,
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0,
+        },
+        layout: { visibility: 'none' },
       })
 
       map.addSource(SELECTION_SOURCE, { type: 'geojson', data: EMPTY_FC })
@@ -427,7 +615,12 @@ export default function MapView({
         const rawGeometry = f.geometry as GeoJSON.Geometry
         const clickPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat]
         const geometry = extractClickedPolygon(rawGeometry, clickPoint)
-        onBuildingClickRef.current?.({ id: stringId, properties: props, geometry })
+        onBuildingClickRef.current?.({
+          id: stringId,
+          properties: props,
+          geometry,
+          vectorFeatureId: f.id != null ? (f.id as number) : undefined,
+        })
       }
       map.on('click', 'buildings-fill', handleClick)
       map.on('click', 'buildings-extrusion', handleClick)
@@ -445,6 +638,21 @@ export default function MapView({
       )
       const selSrc = map.getSource(SELECTION_SOURCE) as maplibregl.GeoJSONSource
       selSrc.setData(selectionFeatureCollection(selectedBuildingsRef.current))
+
+      repositionExtrusionLayersBeforeBoundary(map)
+      syncVectorFeatureStates(map, classificationsRef.current, prevVectorFeatureIdsRef)
+
+      applyMapViewPaint(map, {
+        filters: filtersRef.current,
+        viewMode: viewModeRef.current,
+        whiteMode: whiteModeRef.current,
+        appMode: appModeRef.current,
+        classifiedVisibleCount: buildClassificationFC(
+          classificationsRef.current,
+          filtersRef.current,
+          appModeRef.current,
+        ).features.length,
+      })
 
       // iOS/iPadOS: programmatisches trigger() ohne Nutzeraktion liefert oft Fehler → Control bleibt „durchgestrichen“.
       const shouldAutoGeolocate =
@@ -485,8 +693,15 @@ export default function MapView({
     const map = mapRef.current
     const src = map?.getSource(CLASSIFICATION_SOURCE) as maplibregl.GeoJSONSource | undefined
     if (!src) return
-    src.setData(buildClassificationFC(classifications, filters, appMode))
-  }, [classifications, filters, appMode])
+    const fc = buildClassificationFC(classifications, filters, appMode)
+    src.setData(fc)
+  }, [classifications, filters, appMode, viewMode])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map?.getSource(VECTOR_SOURCE)) return
+    syncVectorFeatureStates(map, classifications, prevVectorFeatureIdsRef)
+  }, [classifications])
 
   useEffect(() => {
     const map = mapRef.current
@@ -497,25 +712,15 @@ export default function MapView({
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map?.getLayer('buildings-fill')) return
-    const baseFill = whiteMode ? '#ffffff' : '#94a3b8'
-    const baseOutline = whiteMode ? '#e2e8f0' : '#64748b'
-    const showU = filters.showUnclassified
-    map.setPaintProperty('buildings-fill', 'fill-color', baseFill)
-    map.setPaintProperty('buildings-fill', 'fill-outline-color', showU ? baseOutline : 'rgba(0,0,0,0)')
-    map.setPaintProperty('buildings-fill', 'fill-opacity', showU ? 0.9 : 0)
-    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-color', whiteMode ? '#ffffff' : '#94a3b8')
-    map.setPaintProperty('buildings-extrusion', 'fill-extrusion-opacity', viewMode === '3d' ? 0.88 : 0)
-    map.setLayoutProperty('buildings-fill', 'visibility', viewMode === '2d' ? 'visible' : 'none')
-    map.setLayoutProperty('buildings-extrusion', 'visibility', viewMode === '3d' ? 'visible' : 'none')
-    if (viewMode === '3d') {
-      map.setPitch(60)
-      map.setBearing(30)
-    } else {
-      map.setPitch(0)
-      map.setBearing(0)
-    }
-  }, [filters, viewMode, whiteMode])
+    if (!map) return
+    applyMapViewPaint(map, {
+      filters,
+      viewMode,
+      whiteMode,
+      appMode,
+      classifiedVisibleCount,
+    })
+  }, [filters, viewMode, whiteMode, appMode, classifiedVisibleCount])
 
   useEffect(() => {
     const map = mapRef.current

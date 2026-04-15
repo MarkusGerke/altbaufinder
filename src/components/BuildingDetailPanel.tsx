@@ -157,7 +157,9 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
               Stufe wählen (1–3: Altbau-Qualität, K = kein Altbau, nur in der Editor-Karte sichtbar):
             </p>
             <ClassificationButtons
-              onClassify={(c) => setClassification(storageKey, c, undefined, building.geometry)}
+              onClassify={(c) =>
+                setClassification(storageKey, c, undefined, building.geometry, building.vectorFeatureId ?? null)
+              }
               activeClassification={classification}
             />
             {classification && (
@@ -200,7 +202,7 @@ function MultiBuildingDetail({
 
   const classifyAll = (c: BuildingClassification) => {
     for (const b of buildings) {
-      setClassification(segmentStorageKey(b.id, b.geometry), c, undefined, b.geometry)
+      setClassification(segmentStorageKey(b.id, b.geometry), c, undefined, b.geometry, b.vectorFeatureId ?? null)
     }
     onDeselectAll?.()
   }
