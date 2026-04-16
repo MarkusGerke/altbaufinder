@@ -3,6 +3,7 @@ import type { Geometry } from 'geojson'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/context/AuthContext'
 import { AUTH_TOKEN_KEY } from '@/services/authApi'
+import { BuildingPhotoReport } from '@/components/BuildingPhotoReport'
 import {
   buildingPhotoServeUrl,
   deleteBuildingPhoto,
@@ -291,6 +292,7 @@ export function BuildingPhotoCapture({ buildingId, buildingGeometry }: Props) {
               </>
             )}
           </div>
+          {p.moderationStatus === 'approved' && <BuildingPhotoReport buildingId={buildingId} />}
         </div>
       )}
       {hint && <p className="text-muted-foreground text-xs">{hint}</p>}

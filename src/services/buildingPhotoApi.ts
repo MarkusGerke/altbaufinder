@@ -134,6 +134,22 @@ export async function deleteBuildingPhoto(buildingId: string): Promise<void> {
   }
 }
 
+/** Meldung zu einem freigegebenen Gebäudefoto (ohne Login). */
+export async function submitBuildingPhotoReport(buildingId: string, message: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/building-photo-report.php`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ building_id: buildingId, message: message.trim() }),
+  })
+  const data = await readJsonResponse<{ ok?: boolean; error?: string }>(res)
+  if (!res.ok) {
+    throw new Error(data.error ?? `Meldung fehlgeschlagen (${res.status})`)
+  }
+  if (!data.ok) {
+    throw new Error(data.error ?? 'Meldung fehlgeschlagen')
+  }
+}
+
 export async function moderateBuildingPhoto(
   buildingId: string,
   action: 'approve' | 'reject'

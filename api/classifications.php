@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth_helpers.php';
 require_once __DIR__ . '/building_use_mapping.php';
+require_once __DIR__ . '/berlin_bounds.php';
 
 function normalize_classification_value(?string $v): ?string {
     if ($v === null || $v === '') {
@@ -195,6 +196,7 @@ try {
         }
 
         $saved = [];
+        $skippedOutsideBerlin = 0;
         foreach ($input as $buildingId => $entry) {
             if (!is_string($buildingId) || $buildingId === '') {
                 continue;
@@ -234,6 +236,11 @@ try {
                 }
             }
 
+            if ($hasGeomCol && $geomJson !== null && !berlin_geometry_json_centroid_inside($geomJson)) {
+                $skippedOutsideBerlin++;
+                continue;
+            }
+
             if ($hasGeomCol && $hasBuildingUseCol) {
                 $stmt->execute([
                     ':id' => $buildingId, ':cls' => $cls, ':year' => $year,
@@ -268,7 +275,10 @@ try {
                 }
             }
         }
-        echo json_encode(['saved' => count($saved)]);
+        echo json_encode([
+            'saved' => count($saved),
+            'skippedOutsideBerlin' => $skippedOutsideBerlin,
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

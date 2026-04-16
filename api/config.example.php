@@ -25,6 +25,8 @@ return [
      */
     'mail_from'      => 'noreply@deine-domain.de',
     'public_app_url' => 'https://deine-domain.de',
+    /** Empfänger für „Foto melden“ (optional; sonst hallo@markusgerke.com bzw. Umgebung ALTBAUFINDER_PHOTO_REPORT_TO). */
+    'photo_report_to' => 'hallo@markusgerke.com',
     /**
      * Optional: User-IDs (users.id), die Gebäudefotos moderieren dürfen (Freigabe / Ablehnung).
      * Alternativ: Umgebungsvariable ALTBAUFINDER_PHOTO_MODERATOR_IDS="1,2"

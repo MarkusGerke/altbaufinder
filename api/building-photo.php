@@ -4,6 +4,7 @@
  * Nähe-Check aus geometry_json; lat/lng werden nicht gespeichert.
  * Neue Uploads: moderation_status = pending (öffentlich erst nach Freigabe via building-photo-moderate.php).
  * GET mit public=1 (ohne Anmeldung): nur { hasApprovedPhoto } für die öffentliche Kartenansicht.
+ * Upload: Originaldatei + JPEG-Anzeigeversion (max. Kante 1600 px, GD); Auslieferung nur filename (Anzeige).
  */
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -91,25 +92,94 @@ function ensure_building_photos_table(PDO $pdo): void {
     } catch (Throwable $e) {
         // Spalte existiert
     }
+    try {
+        $pdo->exec(
+            'ALTER TABLE building_photos ADD COLUMN filename_original VARCHAR(80) NULL AFTER filename'
+        );
+    } catch (Throwable $e) {
+        // Spalte existiert
+    }
 }
 
 function photo_row_for_building(PDO $pdo, string $bid): ?array {
     $st = $pdo->prepare(
-        'SELECT filename, moderation_status, user_id FROM building_photos WHERE building_id = :id LIMIT 1'
+        'SELECT filename, filename_original, moderation_status, user_id FROM building_photos WHERE building_id = :id LIMIT 1'
     );
     $st->execute([':id' => $bid]);
     $r = $st->fetch(PDO::FETCH_ASSOC);
     return $r === false ? null : $r;
 }
 
-function unlink_building_photo_file(?string $filename): void {
-    if ($filename === null || $filename === '' || preg_match('/[^a-zA-Z0-9._-]/', $filename)) {
+/** Nur erwartete Upload-Dateinamen (Anzeige oder Original). */
+function bp_unlink_uploaded_photo_file(?string $filename): void {
+    if ($filename === null || $filename === '') {
+        return;
+    }
+    if (!preg_match('/^[a-f0-9]{32}\\.(jpg|jpeg|png|webp)$/i', $filename)
+        && !preg_match('/^[a-f0-9]{32}_orig\\.(jpg|jpeg|png|webp)$/i', $filename)) {
         return;
     }
     $path = __DIR__ . '/uploads/buildings/' . $filename;
     if (is_file($path)) {
         @unlink($path);
     }
+}
+
+/** Zeile building_photos: Anzeige- und optional Originaldatei löschen. */
+function bp_delete_photo_row_files(?array $row): void {
+    if ($row === null) {
+        return;
+    }
+    $fn = isset($row['filename']) ? (string) $row['filename'] : '';
+    bp_unlink_uploaded_photo_file($fn !== '' ? $fn : null);
+    $fo = isset($row['filename_original']) ? (string) $row['filename_original'] : '';
+    if ($fo !== '') {
+        bp_unlink_uploaded_photo_file($fo);
+    }
+}
+
+/**
+ * Erzeugt JPEG-Anzeigeversion (max. Kante), aus Quellbild. false bei fehlendem GD oder Fehler.
+ */
+function bp_try_create_display_jpeg(string $sourcePath, string $destJpgPath, int $maxEdge = 1600, int $quality = 82): bool {
+    if (!extension_loaded('gd') || !is_file($sourcePath)) {
+        return false;
+    }
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($sourcePath);
+    $im = false;
+    if ($mime === 'image/jpeg') {
+        $im = @imagecreatefromjpeg($sourcePath);
+    } elseif ($mime === 'image/png') {
+        $im = @imagecreatefrompng($sourcePath);
+    } elseif ($mime === 'image/webp' && function_exists('imagecreatefromwebp')) {
+        $im = @imagecreatefromwebp($sourcePath);
+    }
+    if ($im === false) {
+        return false;
+    }
+    $w = imagesx($im);
+    $h = imagesy($im);
+    if ($w < 1 || $h < 1) {
+        imagedestroy($im);
+        return false;
+    }
+    $scale = min(1.0, $maxEdge / max($w, $h));
+    $nw = max(1, (int) round($w * $scale));
+    $nh = max(1, (int) round($h * $scale));
+    $dst = imagecreatetruecolor($nw, $nh);
+    if ($dst === false) {
+        imagedestroy($im);
+        return false;
+    }
+    imagealphablending($dst, false);
+    $white = imagecolorallocate($dst, 255, 255, 255);
+    imagefill($dst, 0, 0, $white);
+    imagealphablending($dst, true);
+    imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h);
+    imagedestroy($im);
+    $ok = imagejpeg($dst, $destJpgPath, $quality);
+    imagedestroy($dst);
+    return $ok;
 }
 
 try {
@@ -245,9 +315,8 @@ if ($method === 'DELETE') {
         echo json_encode(['error' => 'Keine Berechtigung']);
         exit;
     }
-    $fn = (string) $pr['filename'];
     $pdo->prepare('DELETE FROM building_photos WHERE building_id = :id')->execute([':id' => $bid]);
-    unlink_building_photo_file($fn);
+    bp_delete_photo_row_files($pr);
     echo json_encode(['ok' => true]);
     exit;
 }
@@ -357,34 +426,64 @@ if (!is_dir($uploadDir)) {
     }
 }
 
-$filename = bin2hex(random_bytes(16)) . '.' . $ext;
-$dest = $uploadDir . '/' . $filename;
-if (!@move_uploaded_file($tmp, $dest)) {
+$base = bin2hex(random_bytes(16));
+$origFn = $base . '_orig.' . $ext;
+$origPath = $uploadDir . '/' . $origFn;
+if (!@move_uploaded_file($tmp, $origPath)) {
     http_response_code(500);
     echo json_encode(['error' => 'Speichern fehlgeschlagen']);
     exit;
 }
 
+$dispFn = $base . '.jpg';
+$dispPath = $uploadDir . '/' . $dispFn;
+$fnDisplay = $origFn;
+$fnOriginalDb = null;
+if (bp_try_create_display_jpeg($origPath, $dispPath)) {
+    $fnDisplay = $dispFn;
+    $fnOriginalDb = $origFn;
+} else {
+    if (is_file($dispPath)) {
+        @unlink($dispPath);
+    }
+    $singleFn = $base . '.' . $ext;
+    $singlePath = $uploadDir . '/' . $singleFn;
+    if ($singleFn !== $origFn) {
+        if (!@rename($origPath, $singlePath)) {
+            bp_unlink_uploaded_photo_file($origFn);
+            http_response_code(500);
+            echo json_encode(['error' => 'Speichern fehlgeschlagen']);
+            exit;
+        }
+    }
+    $fnDisplay = $singleFn;
+    $fnOriginalDb = null;
+}
+
 try {
     $pdo->beginTransaction();
     $old = photo_row_for_building($pdo, $bid);
-    if ($old !== null && !empty($old['filename'])) {
-        unlink_building_photo_file((string) $old['filename']);
+    if ($old !== null) {
+        bp_delete_photo_row_files($old);
     }
     $pdo->prepare('DELETE FROM building_photos WHERE building_id = :bid')->execute([':bid' => $bid]);
     $ins = $pdo->prepare(
-        'INSERT INTO building_photos (building_id, filename, moderation_status, user_id) VALUES (:bid, :fn, :st, :uid)'
+        'INSERT INTO building_photos (building_id, filename, filename_original, moderation_status, user_id) VALUES (:bid, :fn, :fno, :st, :uid)'
     );
     $ins->execute([
         ':bid' => $bid,
-        ':fn' => $filename,
+        ':fn' => $fnDisplay,
+        ':fno' => $fnOriginalDb,
         ':st' => 'pending',
         ':uid' => $userId,
     ]);
     $pdo->commit();
 } catch (Exception $e) {
     $pdo->rollBack();
-    @unlink($dest);
+    bp_unlink_uploaded_photo_file($fnDisplay);
+    if ($fnOriginalDb !== null) {
+        bp_unlink_uploaded_photo_file($fnOriginalDb);
+    }
     http_response_code(500);
     echo json_encode(['error' => 'Datenbankfehler']);
     exit;

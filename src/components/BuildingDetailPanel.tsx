@@ -7,6 +7,7 @@ import { segmentStorageKey } from '../utils/segmentStorageKey'
 import { BUILDING_USE_LABELS, BUILDING_USE_ORDER } from '@/lib/buildingUseLabels'
 import { fetchOsmBuildingSuggestion, parseOsmElementId } from '@/services/osmSuggestionApi'
 import { BuildingPhotoCapture } from '@/components/BuildingPhotoCapture'
+import { BuildingPhotoReport } from '@/components/BuildingPhotoReport'
 import { buildingPhotoServeUrl, fetchBuildingPhotoHasPublicApproved } from '@/services/buildingPhotoApi'
 import {
   CLASSIFICATION_HEX,
@@ -115,6 +116,7 @@ function ApprovedBuildingPhotoPublic({ buildingId }: { buildingId: string }) {
           alt="Freigegebenes Gebäudefoto"
           className="border-input mt-1 max-h-56 w-full rounded-md border object-contain"
         />
+        <BuildingPhotoReport buildingId={buildingId} />
       </div>
     </>
   )

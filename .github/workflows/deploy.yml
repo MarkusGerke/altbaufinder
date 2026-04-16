@@ -49,8 +49,8 @@ jobs:
         run: |
           mkdir -p api-release/migrations api-release/auth
           cp api/classifications.php api/db.php api/schema.sql api/config.example.php api/health.php api/jwt.php api/auth_helpers.php api/leaderboard.php api/mail_send.php \
-            api/building_use_mapping.php api/osm-building-suggestion.php api/building-photo.php \
-            api/building-photo-serve.php api/building-photo-moderate.php api-release/
+            api/berlin_bounds.php api/building_use_mapping.php api/osm-building-suggestion.php api/building-photo.php \
+            api/building-photo-serve.php api/building-photo-moderate.php api/building-photo-report.php api-release/
           mkdir -p api-release/cache/osm_suggestions api-release/uploads/buildings
           cp api/auth/register.php api/auth/login.php api/auth/me.php \
             api/auth/password-request-reset.php api/auth/password-reset.php \

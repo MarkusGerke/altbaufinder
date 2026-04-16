@@ -21,10 +21,11 @@ TMPFILE="$DATA_DIR/.buildings_update_tmp.json"
 BACKUP="$DATA_DIR/berlin_mitte_buildings.backup.geojson"
 
 OVERPASS_URL="https://overpass-api.de/api/interpreter"
+# Bounding-Box Land Berlin (WGS84), konsistent mit src/lib/berlinBounds.ts / api/berlin_bounds.php
 OVERPASS_QUERY='[out:json][timeout:600];
 (
-  way["building"](52.34,13.09,52.68,13.76);
-  relation["building"](52.34,13.09,52.68,13.76);
+  way["building"](52.339,13.088,52.676,13.762);
+  relation["building"](52.339,13.088,52.676,13.762);
 );
 out body geom;
 >;
