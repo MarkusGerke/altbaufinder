@@ -49,8 +49,13 @@ function App() {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
   const [whiteMode, setWhiteMode] = useState(false)
   const [selectedBuildings, setSelectedBuildings] = useState<SelectedBuildingGeo[]>([])
+  const [lassoSelectActive, setLassoSelectActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { classifications, importClassifications } = useClassification()
+
+  useEffect(() => {
+    if (appMode === 'viewer') setLassoSelectActive(false)
+  }, [appMode])
 
   const onBuildingClick = useCallback((building: SelectedBuildingGeo) => {
     setSelectedBuildings((prev) => {
@@ -65,6 +70,21 @@ function App() {
       return [building]
     })
   }, [appMode])
+
+  const onLassoSelectBuildings = useCallback((buildings: SelectedBuildingGeo[]) => {
+    setSelectedBuildings((prev) => {
+      const keys = new Set(prev.map((b) => segmentStorageKey(b.id, b.geometry)))
+      const next = [...prev]
+      for (const b of buildings) {
+        const k = segmentStorageKey(b.id, b.geometry)
+        if (!keys.has(k)) {
+          keys.add(k)
+          next.push(b)
+        }
+      }
+      return next
+    })
+  }, [])
 
   const handleExport = useCallback(() => {
     const payload = { exportedAt: new Date().toISOString(), classifications }
@@ -162,6 +182,8 @@ function App() {
         onWhiteModeChange={setWhiteMode}
         onDeselectAll={() => setSelectedBuildings([])}
         selectedCount={selectedBuildings.length}
+        lassoSelectActive={lassoSelectActive}
+        onLassoSelectActiveChange={setLassoSelectActive}
         onExport={handleExport}
         onImport={handleImport}
       />
@@ -176,6 +198,8 @@ function App() {
       <main className="flex-1 min-h-0 flex relative">
         <MapView
           onBuildingClick={onBuildingClick}
+          lassoSelectActive={lassoSelectActive}
+          onLassoSelectBuildings={onLassoSelectBuildings}
           filters={filters}
           viewMode={viewMode}
           whiteMode={whiteMode}

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Menu } from 'lucide-react'
+import { Menu, Spline } from 'lucide-react'
 import type { AppMode } from '../types'
 import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
@@ -42,6 +42,8 @@ interface ToolbarProps {
   onWhiteModeChange: (value: boolean) => void
   onDeselectAll: () => void
   selectedCount: number
+  lassoSelectActive: boolean
+  onLassoSelectActiveChange: (active: boolean) => void
   onExport: () => void
   onImport: () => void
 }
@@ -161,6 +163,8 @@ export default function Toolbar({
   onWhiteModeChange,
   onDeselectAll,
   selectedCount,
+  lassoSelectActive,
+  onLassoSelectActiveChange,
   onExport,
   onImport,
 }: ToolbarProps) {
@@ -183,6 +187,19 @@ export default function Toolbar({
         {appMode === 'editor' && hasPendingChanges && (
           <Button type="button" size="sm" onClick={saveAllPending}>
             Speichern
+          </Button>
+        )}
+        {appMode === 'editor' && (
+          <Button
+            type="button"
+            variant={lassoSelectActive ? 'secondary' : 'outline'}
+            size="sm"
+            className={cn(lassoSelectActive && 'ring-1 ring-ring')}
+            title="Mehrere Hausflächen mit einer Freihandform auswählen"
+            onClick={() => onLassoSelectActiveChange(!lassoSelectActive)}
+          >
+            <Spline className="mr-1 inline size-4" aria-hidden />
+            Bereich
           </Button>
         )}
       </div>
@@ -235,8 +252,10 @@ export default function Toolbar({
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground text-sm">Auswahl:</span>
         {appMode === 'editor' && (
-          <span className="text-muted-foreground max-w-[14rem] text-xs">
-            Mehrfachauswahl: Klick hinzufügen, erneut klicken zum Entfernen.
+          <span className="text-muted-foreground max-w-[18rem] text-xs">
+            {lassoSelectActive
+              ? 'Bereich: Auf der Karte zeichnen, loslassen – alle getroffenen Flächen werden ausgewählt. Escape bricht ab.'
+              : 'Mehrfachauswahl: Klick hinzufügen, erneut klicken zum Entfernen.'}
           </span>
         )}
         {selectedCount > 0 && (
@@ -276,6 +295,19 @@ export default function Toolbar({
             {appMode === 'editor' && hasPendingChanges && (
               <Button type="button" size="sm" onClick={saveAllPending}>
                 Speichern
+              </Button>
+            )}
+            {appMode === 'editor' && (
+              <Button
+                type="button"
+                variant={lassoSelectActive ? 'secondary' : 'outline'}
+                size="sm"
+                className={cn(lassoSelectActive && 'ring-1 ring-ring')}
+                title="Mehrere Hausflächen mit einer Freihandform auswählen"
+                onClick={() => onLassoSelectActiveChange(!lassoSelectActive)}
+              >
+                <Spline className="mr-1 inline size-4" aria-hidden />
+                Bereich
               </Button>
             )}
           </div>
@@ -335,6 +367,17 @@ export default function Toolbar({
                   Weißmodus
                 </Label>
               </div>
+              {appMode === 'editor' && (
+                <Button
+                  type="button"
+                  variant={lassoSelectActive ? 'secondary' : 'outline'}
+                  size="sm"
+                  onClick={() => onLassoSelectActiveChange(!lassoSelectActive)}
+                >
+                  <Spline className="mr-1 inline size-4" aria-hidden />
+                  Bereich wählen
+                </Button>
+              )}
               {selectedCount > 0 && (
                 <Button type="button" variant="outline" size="sm" onClick={onDeselectAll}>
                   Abwählen ({selectedCount})

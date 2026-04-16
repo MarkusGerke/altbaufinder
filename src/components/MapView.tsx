@@ -310,6 +310,77 @@ function extractClickedPolygon(
   return geometry
 }
 
+/** Geschlossene Ring-Koordinaten [lng, lat] für Treffertests (letzter Punkt = erster). */
+function closeLngLatRing(pts: Array<{ lng: number; lat: number }>): [number, number][] {
+  if (pts.length < 2) return []
+  const first = pts[0]
+  const last = pts[pts.length - 1]
+  const ring: [number, number][] = pts.map((p) => [p.lng, p.lat])
+  if (first.lng !== last.lng || first.lat !== last.lat) {
+    ring.push([first.lng, first.lat])
+  }
+  return ring
+}
+
+function dedupeBuildingFeatures(features: maplibregl.GeoJSONFeature[]): maplibregl.GeoJSONFeature[] {
+  const seen = new Set<string | number>()
+  const out: maplibregl.GeoJSONFeature[] = []
+  for (const f of features) {
+    if (f.id == null || seen.has(f.id)) continue
+    seen.add(f.id)
+    out.push(f)
+  }
+  return out
+}
+
+function buildingsFromLasso(
+  map: maplibregl.Map,
+  lassoLngLat: Array<{ lng: number; lat: number }>,
+): SelectedBuildingGeo[] {
+  const ring = closeLngLatRing(lassoLngLat)
+  if (ring.length < 4) return []
+
+  const projected = ring.map(([lng, lat]) => map.project([lng, lat]))
+  const xs = projected.map((p) => p.x)
+  const ys = projected.map((p) => p.y)
+  const pad = 4
+  const minX = Math.min(...xs) - pad
+  const maxX = Math.max(...xs) + pad
+  const minY = Math.min(...ys) - pad
+  const maxY = Math.max(...ys) + pad
+
+  const raw = map.queryRenderedFeatures(
+    [
+      [minX, minY],
+      [maxX, maxY],
+    ],
+    { layers: ['buildings-fill', 'buildings-extrusion'] },
+  )
+  const features = dedupeBuildingFeatures(raw as maplibregl.GeoJSONFeature[])
+  const out: SelectedBuildingGeo[] = []
+
+  for (const f of features) {
+    if (f.id == null) continue
+    const stringId = tileIdToStringId(f.id as number)
+    const props = (f.properties ?? {}) as Record<string, unknown>
+    const rawGeometry = f.geometry as GeoJSON.Geometry
+    const c = geoJsonPolygonCentroid(rawGeometry)
+    if (!c || !isLatLngInBerlin(c.lat, c.lng)) continue
+    const pt: [number, number] = [c.lng, c.lat]
+    if (!pointInRing(pt, ring as number[][])) continue
+    const geometry = extractClickedPolygon(rawGeometry, pt)
+    const c2 = geoJsonPolygonCentroid(geometry)
+    if (c2 && !isLatLngInBerlin(c2.lat, c2.lng)) continue
+    out.push({
+      id: stringId,
+      properties: props,
+      geometry,
+      vectorFeatureId: f.id as number,
+    })
+  }
+  return out
+}
+
 export interface SelectedBuildingGeo {
   id: string
   properties: Record<string, unknown>
@@ -320,6 +391,9 @@ export interface SelectedBuildingGeo {
 
 interface MapViewProps {
   onBuildingClick?: (building: SelectedBuildingGeo) => void
+  /** Editor: Freihand-Bereich zeichnen, alle getroffenen Hausflächen zur Auswahl hinzufügen. */
+  lassoSelectActive?: boolean
+  onLassoSelectBuildings?: (buildings: SelectedBuildingGeo[]) => void
   filters: FilterState
   viewMode: '2d' | '3d'
   whiteMode: boolean
@@ -439,6 +513,8 @@ function applyMapViewPaint(map: maplibregl.Map, input: MapViewPaintInput): void 
 
 export default function MapView({
   onBuildingClick,
+  lassoSelectActive = false,
+  onLassoSelectBuildings,
   filters,
   viewMode,
   whiteMode,
@@ -447,6 +523,11 @@ export default function MapView({
 }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
+  const lassoCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const lassoSelectActiveRef = useRef(lassoSelectActive)
+  lassoSelectActiveRef.current = lassoSelectActive
+  const onLassoSelectRef = useRef(onLassoSelectBuildings)
+  onLassoSelectRef.current = onLassoSelectBuildings
   const { classifications } = useClassification()
   const classificationsRef = useRef(classifications)
   classificationsRef.current = classifications
@@ -468,6 +549,8 @@ export default function MapView({
   selectedBuildingsRef.current = selectedBuildings
   const basemapSnapshotRef = useRef<Map<string, string | undefined> | null>(null)
   const prevVectorFeatureIdsRef = useRef<Set<number>>(new Set())
+  const lassoPtsRef = useRef<Array<{ lng: number; lat: number }>>([])
+  const lassoDrawingRef = useRef(false)
 
   useEffect(() => {
     if (!mapContainerRef.current) return
@@ -619,6 +702,7 @@ export default function MapView({
       }
 
       const handleClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
+        if (lassoSelectActiveRef.current) return
         const f = e.features?.[0]
         if (!f || f.id == null) return
         const clickPoint: [number, number] = [e.lngLat.lng, e.lngLat.lat]
@@ -749,7 +833,182 @@ export default function MapView({
     }
   }, [whiteMode, appMode])
 
+  useEffect(() => {
+    const map = mapRef.current
+    const canvas = lassoCanvasRef.current
+    if (!map || !canvas || !lassoSelectActive || appMode !== 'editor') {
+      return undefined
+    }
+
+    const wrap = map.getContainer()
+
+    const syncCanvasSize = () => {
+      const w = wrap.clientWidth
+      const h = wrap.clientHeight
+      const dpr = Math.min(2, window.devicePixelRatio || 1)
+      canvas.width = Math.round(w * dpr)
+      canvas.height = Math.round(h * dpr)
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      }
+    }
+
+    syncCanvasSize()
+    map.on('resize', syncCanvasSize)
+
+    const clearCanvas = () => {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      const dpr = Math.min(2, window.devicePixelRatio || 1)
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, canvas.width + 2, canvas.height + 2)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+
+    const drawPartial = () => {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      clearCanvas()
+      const pts = lassoPtsRef.current
+      if (pts.length < 1) return
+      ctx.strokeStyle = '#1d4ed8'
+      ctx.lineWidth = 2.5
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      const p0 = map.project([pts[0].lng, pts[0].lat])
+      ctx.moveTo(p0.x, p0.y)
+      for (let i = 1; i < pts.length; i++) {
+        const p = map.project([pts[i].lng, pts[i].lat])
+        ctx.lineTo(p.x, p.y)
+      }
+      ctx.stroke()
+    }
+
+    const clientToLngLat = (e: PointerEvent) => {
+      const r = wrap.getBoundingClientRect()
+      return map.unproject([e.clientX - r.left, e.clientY - r.top])
+    }
+
+    const shouldAppend = (lng: number, lat: number) => {
+      const arr = lassoPtsRef.current
+      const last = arr[arr.length - 1]
+      if (!last) return true
+      const a = map.project([last.lng, last.lat])
+      const b = map.project([lng, lat])
+      return Math.hypot(a.x - b.x, a.y - b.y) >= 5
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!lassoSelectActiveRef.current || e.button !== 0) return
+      e.stopPropagation()
+      e.preventDefault()
+      const ll = clientToLngLat(e)
+      lassoPtsRef.current = [{ lng: ll.lng, lat: ll.lat }]
+      lassoDrawingRef.current = true
+      map.dragPan.disable()
+      try {
+        canvas.setPointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
+      }
+      drawPartial()
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!lassoDrawingRef.current) return
+      e.preventDefault()
+      const ll = clientToLngLat(e)
+      if (shouldAppend(ll.lng, ll.lat)) {
+        lassoPtsRef.current.push({ lng: ll.lng, lat: ll.lat })
+        drawPartial()
+      }
+    }
+
+    const finishDraw = (e: PointerEvent) => {
+      if (!lassoDrawingRef.current) return
+      lassoDrawingRef.current = false
+      map.dragPan.enable()
+      try {
+        canvas.releasePointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
+      }
+      const pts = lassoPtsRef.current
+      lassoPtsRef.current = []
+      clearCanvas()
+      if (pts.length >= 3) {
+        const buildings = buildingsFromLasso(map, pts)
+        if (buildings.length > 0) {
+          onLassoSelectRef.current?.(buildings)
+        }
+      }
+    }
+
+    const onPointerCancel = (e: PointerEvent) => {
+      if (!lassoDrawingRef.current) return
+      lassoDrawingRef.current = false
+      map.dragPan.enable()
+      lassoPtsRef.current = []
+      clearCanvas()
+      try {
+        canvas.releasePointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
+      }
+    }
+
+    canvas.addEventListener('pointerdown', onPointerDown, { passive: false })
+    canvas.addEventListener('pointermove', onPointerMove, { passive: false })
+    canvas.addEventListener('pointerup', finishDraw)
+    canvas.addEventListener('pointercancel', onPointerCancel)
+
+    return () => {
+      map.off('resize', syncCanvasSize)
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('pointermove', onPointerMove)
+      canvas.removeEventListener('pointerup', finishDraw)
+      canvas.removeEventListener('pointercancel', onPointerCancel)
+      map.dragPan.enable()
+      lassoDrawingRef.current = false
+      lassoPtsRef.current = []
+      clearCanvas()
+    }
+  }, [lassoSelectActive, appMode])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !lassoDrawingRef.current) return
+      const map = mapRef.current
+      const canvas = lassoCanvasRef.current
+      lassoDrawingRef.current = false
+      lassoPtsRef.current = []
+      map?.dragPan.enable()
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          const dpr = Math.min(2, window.devicePixelRatio || 1)
+          ctx.setTransform(1, 0, 0, 1, 0, 0)
+          ctx.clearRect(0, 0, canvas.width + 2, canvas.height + 2)
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
-    <div ref={mapContainerRef} className="w-full h-full" aria-label="Karte Berlin" />
+    <div className="relative h-full w-full">
+      <div ref={mapContainerRef} className="h-full w-full" aria-label="Karte Berlin" />
+      <canvas
+        ref={lassoCanvasRef}
+        aria-hidden
+        className={lassoSelectActive && appMode === 'editor' ? 'pointer-events-auto touch-none absolute inset-0 z-[4] cursor-crosshair' : 'pointer-events-none absolute inset-0 z-[4]'}
+      />
+    </div>
   )
 }
