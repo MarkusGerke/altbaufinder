@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { TurnstileWidget } from '@/components/TurnstileWidget'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,6 +17,11 @@ interface AuthModalProps {
   onClose: () => void
 }
 
+const TURNSTILE_SITE_KEY =
+  typeof import.meta.env.VITE_TURNSTILE_SITE_KEY === 'string'
+    ? import.meta.env.VITE_TURNSTILE_SITE_KEY.trim()
+    : ''
+
 export default function AuthModal({ open, onClose }: AuthModalProps) {
   const { login, register, error, clearError, requestPasswordReset } = useAuth()
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -26,6 +32,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
   const [localError, setLocalError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [forgotSent, setForgotSent] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -33,6 +40,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
       clearError()
       setAuthView('tabs')
       setForgotSent(false)
+      setTurnstileToken(null)
     }
   }, [open, clearError])
 
@@ -43,6 +51,10 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
       setLocalError('E-Mail und Passwort ausfüllen')
       return
     }
+    if (mode === 'register' && TURNSTILE_SITE_KEY !== '' && (!turnstileToken || turnstileToken === '')) {
+      setLocalError('Bitte die Sicherheitsprüfung abschließen.')
+      return
+    }
     setPending(true)
     try {
       if (mode === 'login') await login(email.trim(), password)
@@ -50,7 +62,8 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
         await register(
           email.trim(),
           password,
-          displayName.trim() !== '' ? displayName.trim() : undefined
+          displayName.trim() !== '' ? displayName.trim() : undefined,
+          TURNSTILE_SITE_KEY !== '' ? (turnstileToken ?? undefined) : undefined
         )
       setPassword('')
       onClose()
@@ -139,6 +152,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
               onValueChange={(v) => {
                 setMode(v as 'login' | 'register')
                 setLocalError(null)
+                setTurnstileToken(null)
               }}
               className="w-full"
             >
@@ -174,6 +188,11 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                   displayError={displayError}
                   pending={pending}
                   onSubmit={submit}
+                  turnstileSlot={
+                    TURNSTILE_SITE_KEY !== '' ? (
+                      <TurnstileWidget siteKey={TURNSTILE_SITE_KEY} onToken={setTurnstileToken} />
+                    ) : null
+                  }
                 />
               </TabsContent>
             </Tabs>
@@ -196,6 +215,7 @@ function AuthFormInner({
   pending,
   onSubmit,
   onForgotPassword,
+  turnstileSlot,
 }: {
   mode: 'login' | 'register'
   email: string
@@ -208,6 +228,7 @@ function AuthFormInner({
   pending: boolean
   onSubmit: (e: React.FormEvent) => void
   onForgotPassword?: () => void
+  turnstileSlot?: ReactNode
 }) {
   const formId = mode === 'login' ? 'auth-form-login' : 'auth-form-register'
   const emailAuto = mode === 'login' ? 'username' : 'email'
@@ -256,6 +277,7 @@ function AuthFormInner({
           </p>
         </div>
       )}
+      {mode === 'register' && turnstileSlot}
       {displayError && <p className="text-destructive text-sm">{displayError}</p>}
       {mode === 'login' && onForgotPassword && (
         <div className="flex justify-end">

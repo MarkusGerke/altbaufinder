@@ -26,7 +26,12 @@ interface AuthContextValue {
   error: string | null
   clearError: () => void
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, displayName?: string) => Promise<void>
+  register: (
+    email: string,
+    password: string,
+    displayName?: string,
+    turnstileToken?: string
+  ) => Promise<void>
   logout: () => void
   refreshMe: () => Promise<void>
   isLoggedIn: boolean
@@ -100,19 +105,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setScore(me.score)
   }, [])
 
-  const register = useCallback(async (email: string, password: string, displayName?: string) => {
-    setError(null)
-    const { token: t, user: u } = await authRegister(email, password, displayName)
-    try {
-      localStorage.setItem(AUTH_TOKEN_KEY, t)
-    } catch {
-      /* ignore */
-    }
-    setToken(t)
-    setUser(u)
-    const me = await authMe(t)
-    setScore(me.score)
-  }, [])
+  const register = useCallback(
+    async (email: string, password: string, displayName?: string, turnstileToken?: string) => {
+      setError(null)
+      const { token: t, user: u } = await authRegister(email, password, displayName, turnstileToken)
+      try {
+        localStorage.setItem(AUTH_TOKEN_KEY, t)
+      } catch {
+        /* ignore */
+      }
+      setToken(t)
+      setUser(u)
+      const me = await authMe(t)
+      setScore(me.score)
+    },
+    []
+  )
 
   const logout = useCallback(() => {
     try {

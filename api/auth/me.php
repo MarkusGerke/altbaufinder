@@ -18,6 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../auth_helpers.php';
 
+json_security_headers();
+
 $uid = auth_user_id_from_request();
 if ($uid === null) {
     http_response_code(401);
@@ -28,9 +30,11 @@ if ($uid === null) {
 try {
     $pdo = getDbConnection();
     ensure_marks_tables($pdo);
-    $stmt = $pdo->prepare('SELECT id, email, display_name FROM users WHERE id = :id LIMIT 1');
+    $stmt = $pdo->prepare(
+        'SELECT id, email, display_name, COALESCE(can_upload_photos, 1) AS can_upload_photos FROM users WHERE id = :id LIMIT 1'
+    );
     $stmt->execute([':id' => $uid]);
-    $row = $stmt->fetch();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) {
         http_response_code(401);
         echo json_encode(['error' => 'Nutzer nicht gefunden']);
@@ -39,16 +43,8 @@ try {
     $cnt = $pdo->prepare('SELECT COUNT(*) AS c FROM user_building_marks WHERE user_id = :id');
     $cnt->execute([':id' => $uid]);
     $score = (int) ($cnt->fetch()['c'] ?? 0);
-    $dn = isset($row['display_name']) && $row['display_name'] !== ''
-        ? (string) $row['display_name']
-        : ('Nutzer' . (int) $row['id']);
     echo json_encode([
-        'user'  => [
-            'id'          => (int) $row['id'],
-            'email'       => $row['email'],
-            'displayName' => $dn,
-            'isPhotoModerator' => is_photo_moderator((int) $row['id']),
-        ],
+        'user'  => auth_user_from_db_row($row),
         'score' => $score,
     ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {

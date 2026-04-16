@@ -58,16 +58,6 @@ const CLASSIFICATION_SOURCE = 'classification-overlay'
 /** OpenFreeMap Liberty (Vektor-Basemap, gleiche `openmaptiles`-Quelle wie unsere Gebäude-Layer). */
 const VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
 
-const CUSTOM_MAP_LAYER_IDS = new Set([
-  'buildings-fill',
-  'buildings-extrusion',
-  'classification-fill',
-  'classification-outline',
-  'classification-extrusion',
-  'selection-fill',
-  'selection-outline',
-])
-
 /** Im Viewer: POI-Schichten und Fußweg-Beschriftung ausblenden (Orientierung: Straßen, Orte, Gewässer). */
 const SYMBOL_LAYERS_HIDDEN_IN_VIEWER = new Set([
   'poi_r20',
@@ -77,8 +67,6 @@ const SYMBOL_LAYERS_HIDDEN_IN_VIEWER = new Set([
   'airport',
   'highway-name-path',
 ])
-
-const LIBERTY_BACKGROUND = '#f8f4f0'
 
 function firstSymbolLayerId(map: maplibregl.Map): string | undefined {
   return map.getStyle().layers?.find((l) => l.type === 'symbol')?.id
@@ -92,56 +80,12 @@ function hideDuplicateStyleBuildings(map: maplibregl.Map): void {
   }
 }
 
-function snapshotBasemapVisibility(map: maplibregl.Map): Map<string, string | undefined> {
-  const snap = new Map<string, string | undefined>()
-  for (const layer of map.getStyle().layers ?? []) {
-    if (CUSTOM_MAP_LAYER_IDS.has(layer.id)) continue
-    try {
-      snap.set(layer.id, map.getLayoutProperty(layer.id, 'visibility') as string | undefined)
-    } catch {
-      snap.set(layer.id, undefined)
-    }
-  }
-  return snap
-}
-
 function applyViewerSymbolFilter(map: maplibregl.Map, mode: AppMode): void {
   const vis = mode === 'viewer' ? 'none' : 'visible'
   for (const id of SYMBOL_LAYERS_HIDDEN_IN_VIEWER) {
     if (!map.getLayer(id)) continue
     map.setLayoutProperty(id, 'visibility', vis)
   }
-}
-
-function applyWhiteBasemap(
-  map: maplibregl.Map,
-  white: boolean,
-  snapshot: Map<string, string | undefined>
-): void {
-  if (white) {
-    for (const layer of map.getStyle().layers ?? []) {
-      if (CUSTOM_MAP_LAYER_IDS.has(layer.id)) continue
-      if (layer.id === 'background') {
-        map.setPaintProperty('background', 'background-color', '#ffffff')
-        continue
-      }
-      map.setLayoutProperty(layer.id, 'visibility', 'none')
-    }
-    return
-  }
-  for (const [id, prev] of snapshot) {
-    if (!map.getLayer(id)) continue
-    const v = prev === 'none' ? 'none' : 'visible'
-    try {
-      map.setLayoutProperty(id, 'visibility', v)
-    } catch {
-      /* ignore */
-    }
-  }
-  if (map.getLayer('background')) {
-    map.setPaintProperty('background', 'background-color', LIBERTY_BACKGROUND)
-  }
-  hideDuplicateStyleBuildings(map)
 }
 
 function tileIdToStringId(tileId: number): string {
@@ -396,7 +340,6 @@ interface MapViewProps {
   onLassoSelectBuildings?: (buildings: SelectedBuildingGeo[]) => void
   filters: FilterState
   viewMode: '2d' | '3d'
-  whiteMode: boolean
   selectedBuildings: SelectedBuildingGeo[]
   appMode: AppMode
 }
@@ -416,7 +359,6 @@ function selectionFeatureCollection(selected: SelectedBuildingGeo[]): GeoJSON.Fe
 interface MapViewPaintInput {
   filters: FilterState
   viewMode: '2d' | '3d'
-  whiteMode: boolean
   appMode: AppMode
   /** Anzahl sichtbarer Klassifikations-Features (GeoJSON); 0 → in 3D neutrale Vektor-Würfel zeigen, wenn „Unklassifiziert“ aus ist. */
   classifiedVisibleCount: number
@@ -424,7 +366,7 @@ interface MapViewPaintInput {
 
 /** 2D/3D: Kamera immer setzen; Paint nur wenn Custom-Layer existieren (ohne `isStyleLoaded()` — in MapLibre 5 kann das sonst dauerhaft false bleiben und 3D blockieren). */
 function applyMapViewPaint(map: maplibregl.Map, input: MapViewPaintInput): void {
-  const { filters, viewMode, whiteMode, appMode, classifiedVisibleCount } = input
+  const { filters, viewMode, appMode, classifiedVisibleCount } = input
 
   if (viewMode === '3d') {
     map.setPitch(60)
@@ -440,10 +382,9 @@ function applyMapViewPaint(map: maplibregl.Map, input: MapViewPaintInput): void 
     return
   }
   const active = hasActiveBuildingFilters(filters, appMode)
-  const baseFill = whiteMode ? '#ffffff' : '#94a3b8'
-  const baseOutline = whiteMode ? '#e2e8f0' : '#64748b'
-  /** 3D-Extrusion auf weißem Hintergrund sichtbar halten (nicht #fff auf #fff). */
-  const extrusionFillColor = whiteMode ? '#64748b' : baseFill
+  const baseFill = '#94a3b8'
+  const baseOutline = '#64748b'
+  const extrusionFillColor = baseFill
   const showU = filters.showUnclassified
   /** Ohne sichtbare Klassifikations-Polygone sonst komplett leere 3D-Stadt bei showUnclassified=false. */
   const showVectorUnclassified =
@@ -517,7 +458,6 @@ export default function MapView({
   onLassoSelectBuildings,
   filters,
   viewMode,
-  whiteMode,
   selectedBuildings,
   appMode,
 }: MapViewProps) {
@@ -539,15 +479,12 @@ export default function MapView({
   filtersRef.current = filters
   const appModeRef = useRef(appMode)
   appModeRef.current = appMode
-  const whiteModeRef = useRef(whiteMode)
-  whiteModeRef.current = whiteMode
   const viewModeRef = useRef(viewMode)
   viewModeRef.current = viewMode
   const onBuildingClickRef = useRef(onBuildingClick)
   onBuildingClickRef.current = onBuildingClick
   const selectedBuildingsRef = useRef(selectedBuildings)
   selectedBuildingsRef.current = selectedBuildings
-  const basemapSnapshotRef = useRef<Map<string, string | undefined> | null>(null)
   const prevVectorFeatureIdsRef = useRef<Set<number>>(new Set())
   const lassoPtsRef = useRef<Array<{ lng: number; lat: number }>>([])
   const lassoDrawingRef = useRef(false)
@@ -595,8 +532,8 @@ export default function MapView({
         intensity: 0.6,
       } as maplibregl.LightSpecification)
 
-      const baseFill = whiteModeRef.current ? '#ffffff' : '#94a3b8'
-      const baseOutline = whiteModeRef.current ? '#e2e8f0' : '#64748b'
+      const baseFill = '#94a3b8'
+      const baseOutline = '#64748b'
       const showUnclassifiedBase = filtersRef.current.showUnclassified
       const baseFillOpacity = showUnclassifiedBase ? 0.9 : 0
       const baseOutlinePaint = showUnclassifiedBase ? baseOutline : 'rgba(0,0,0,0)'
@@ -631,7 +568,7 @@ export default function MapView({
           'source-layer': BUILDING_SOURCE_LAYER,
           filter: ['!=', ['get', 'hide_3d'], true],
           paint: {
-            'fill-extrusion-color': whiteModeRef.current ? '#64748b' : '#94a3b8',
+            'fill-extrusion-color': '#94a3b8',
             'fill-extrusion-height': heightExpr,
             'fill-extrusion-base': ['coalesce', ['to-number', ['get', 'render_min_height']], 0] as maplibregl.ExpressionSpecification,
             'fill-extrusion-opacity': 0,
@@ -694,12 +631,7 @@ export default function MapView({
         },
       })
 
-      basemapSnapshotRef.current = snapshotBasemapVisibility(map)
-      if (whiteModeRef.current) {
-        applyWhiteBasemap(map, true, basemapSnapshotRef.current)
-      } else {
-        applyViewerSymbolFilter(map, appModeRef.current)
-      }
+      applyViewerSymbolFilter(map, appModeRef.current)
 
       const handleClick = (e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }) => {
         if (lassoSelectActiveRef.current) return
@@ -743,7 +675,6 @@ export default function MapView({
       applyMapViewPaint(map, {
         filters: filtersRef.current,
         viewMode: viewModeRef.current,
-        whiteMode: whiteModeRef.current,
         appMode: appModeRef.current,
         classifiedVisibleCount: buildClassificationFC(
           classificationsRef.current,
@@ -814,24 +745,17 @@ export default function MapView({
     applyMapViewPaint(map, {
       filters,
       viewMode,
-      whiteMode,
       appMode,
       classifiedVisibleCount,
     })
-  }, [filters, viewMode, whiteMode, appMode, classifiedVisibleCount])
+  }, [filters, viewMode, appMode, classifiedVisibleCount])
 
   useEffect(() => {
     const map = mapRef.current
-    const snap = basemapSnapshotRef.current
-    if (!map?.getLayer('buildings-fill') || !snap) return
-    if (whiteMode) {
-      applyWhiteBasemap(map, true, snap)
-    } else {
-      applyWhiteBasemap(map, false, snap)
-      hideDuplicateStyleBuildings(map)
-      applyViewerSymbolFilter(map, appMode)
-    }
-  }, [whiteMode, appMode])
+    if (!map?.getLayer('buildings-fill')) return
+    hideDuplicateStyleBuildings(map)
+    applyViewerSymbolFilter(map, appMode)
+  }, [appMode])
 
   useEffect(() => {
     const map = mapRef.current

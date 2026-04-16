@@ -51,14 +51,17 @@ try {
     }
     $stmt = $pdo->prepare('UPDATE users SET display_name = :d WHERE id = :id');
     $stmt->execute([':d' => $newName, ':id' => $uid]);
-    $em = $pdo->prepare('SELECT email FROM users WHERE id = :id LIMIT 1');
-    $em->execute([':id' => $uid]);
-    $row = $em->fetch();
-    $email = $row ? (string) $row['email'] : '';
-    echo json_encode(
-        ['user' => ['id' => $uid, 'email' => $email, 'displayName' => $newName]],
-        JSON_UNESCAPED_UNICODE
+    $em = $pdo->prepare(
+        'SELECT id, email, display_name, COALESCE(can_upload_photos, 1) AS can_upload_photos FROM users WHERE id = :id LIMIT 1'
     );
+    $em->execute([':id' => $uid]);
+    $row = $em->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Nutzer nicht gefunden']);
+        exit;
+    }
+    echo json_encode(['user' => auth_user_from_db_row($row)], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Speichern fehlgeschlagen', 'detail' => $e->getMessage()], JSON_UNESCAPED_UNICODE);

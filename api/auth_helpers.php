@@ -99,6 +99,7 @@ function ensure_marks_tables(PDO $pdo): void {
     );
     ensure_users_password_reset_columns($pdo);
     ensure_users_display_name($pdo);
+    ensure_users_can_upload_photos($pdo);
 }
 
 /** Spalten für Passwort-zurücksetzen (bestehende Installationen per ALTER nachziehen). */
@@ -126,6 +127,29 @@ function fantasy_display_name_pool(): array {
         'Dachreiter', 'Mittelrisalit', 'Ziegelrot', 'Stuckrose', 'Giebelfeld',
         'Kaiserstuck', 'Loggia', 'Balkonbrüstung', 'Fassadengliederung',
     ];
+}
+
+/** Neue Konten: Upload erst nach Freigabe (1 = erlaubt). Bestehende Installationen: Spalte mit Default 1. */
+function ensure_users_can_upload_photos(PDO $pdo): void {
+    try {
+        $pdo->exec('ALTER TABLE users ADD COLUMN can_upload_photos TINYINT(1) NOT NULL DEFAULT 1');
+    } catch (Throwable $e) {
+        // Spalte existiert vermutlich schon
+    }
+}
+
+function user_can_upload_photos(PDO $pdo, int $userId): bool {
+    if ($userId < 1) {
+        return false;
+    }
+    ensure_users_can_upload_photos($pdo);
+    $st = $pdo->prepare('SELECT COALESCE(can_upload_photos, 1) AS c FROM users WHERE id = :id LIMIT 1');
+    $st->execute([':id' => $userId]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if ($r === false) {
+        return false;
+    }
+    return (int) ($r['c'] ?? 0) === 1;
 }
 
 function ensure_users_display_name(PDO $pdo): void {
@@ -226,6 +250,128 @@ function is_photo_moderator(?int $userId): bool {
         return false;
     }
     return in_array($userId, photo_moderator_user_ids(), true);
+}
+
+/**
+ * User-IDs, die neue Konten für Foto-Uploads freischalten dürfen (config: account_approver_user_ids
+ * oder Umgebung ALTBAUFINDER_ACCOUNT_APPROVER_IDS="1,2").
+ *
+ * @return int[]
+ */
+function account_approver_user_ids(): array {
+    $out = [];
+    try {
+        $cfg = get_app_config();
+        if (isset($cfg['account_approver_user_ids']) && is_array($cfg['account_approver_user_ids'])) {
+            foreach ($cfg['account_approver_user_ids'] as $v) {
+                $n = (int) $v;
+                if ($n > 0) {
+                    $out[] = $n;
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        // config fehlt
+    }
+    $env = getenv('ALTBAUFINDER_ACCOUNT_APPROVER_IDS');
+    if ($env !== false && $env !== '') {
+        foreach (explode(',', (string) $env) as $part) {
+            $n = (int) trim($part);
+            if ($n > 0) {
+                $out[] = $n;
+            }
+        }
+    }
+    return array_values(array_unique($out));
+}
+
+function is_account_approver(?int $userId): bool {
+    if ($userId === null || $userId < 1) {
+        return false;
+    }
+    return in_array($userId, account_approver_user_ids(), true);
+}
+
+function json_security_headers(): void {
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+}
+
+/** Cloudflare Turnstile: leerer Secret = Prüfung aus (nur Rate-Limit). */
+function turnstile_secret(): string {
+    try {
+        $cfg = get_app_config();
+        if (isset($cfg['turnstile_secret']) && is_string($cfg['turnstile_secret'])) {
+            $s = trim($cfg['turnstile_secret']);
+            if ($s !== '') {
+                return $s;
+            }
+        }
+    } catch (Throwable $e) {
+        // ignore
+    }
+    $v = getenv('ALTBAUFINDER_TURNSTILE_SECRET');
+    if ($v !== false && trim((string) $v) !== '') {
+        return trim((string) $v);
+    }
+    return '';
+}
+
+/**
+ * @return true bei Erfolg, false bei fehlendem Token, string bei Netz-/Parse-Fehler (für Logging, nicht an Client)
+ */
+function turnstile_verify_token(?string $responseToken, string $remoteIp): bool|string {
+    $secret = turnstile_secret();
+    if ($secret === '') {
+        return true;
+    }
+    if (!is_string($responseToken) || trim($responseToken) === '') {
+        return false;
+    }
+    $body = http_build_query([
+        'secret' => $secret,
+        'response' => $responseToken,
+        'remoteip' => $remoteIp,
+    ]);
+    $ctx = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
+            'content' => $body,
+            'timeout' => 6,
+        ],
+    ]);
+    $raw = @file_get_contents('https://challenges.cloudflare.com/turnstile/v0/siteverify', false, $ctx);
+    if ($raw === false) {
+        return 'turnstile_http';
+    }
+    $j = json_decode($raw, true);
+    if (!is_array($j)) {
+        return 'turnstile_json';
+    }
+    return !empty($j['success']);
+}
+
+/**
+ * Nutzerobjekt für Login/me/Registrierung (JSON).
+ *
+ * @param array{id:int|string,email:string,display_name?:?string,can_upload_photos?:int|string|null} $row
+ * @return array{id:int,email:string,displayName:string,isPhotoModerator:bool,canUploadPhotos:bool,isAccountApprover:bool}
+ */
+function auth_user_from_db_row(array $row): array {
+    $id = (int) $row['id'];
+    $dn = isset($row['display_name']) && $row['display_name'] !== ''
+        ? (string) $row['display_name']
+        : ('Nutzer' . $id);
+    $cup = isset($row['can_upload_photos']) ? (int) $row['can_upload_photos'] : 1;
+    return [
+        'id' => $id,
+        'email' => (string) $row['email'],
+        'displayName' => $dn,
+        'isPhotoModerator' => is_photo_moderator($id),
+        'canUploadPhotos' => $cup === 1,
+        'isAccountApprover' => is_account_approver($id),
+    ];
 }
 
 function mask_email(string $email): string {

@@ -1,19 +1,25 @@
 import { useState, type ReactNode } from 'react'
-import { Menu, Spline } from 'lucide-react'
+import { ChevronDown, Menu, Spline } from 'lucide-react'
 import type { AppMode } from '../types'
 import type { BuildingClassification } from '../types'
 import { useClassification } from '../context/ClassificationContext'
 import {
   CLASSIFICATION_HEX,
+  CLASSIFICATION_LABELS,
   CLASSIFICATION_ORDER,
   CLASSIFICATION_ORDER_WITH_KEIN,
-  CLASSIFICATION_SHORT,
 } from '../classificationLabels'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
 export interface FilterState {
@@ -38,95 +44,107 @@ interface ToolbarProps {
   onFiltersChange: (filters: FilterState) => void
   viewMode: '2d' | '3d'
   onViewModeChange: (mode: '2d' | '3d') => void
-  whiteMode: boolean
-  onWhiteModeChange: (value: boolean) => void
   onDeselectAll: () => void
   selectedCount: number
   lassoSelectActive: boolean
   onLassoSelectActiveChange: (active: boolean) => void
-  onExport: () => void
-  onImport: () => void
 }
 
-function ClassificationFilterToggles({
+function classificationOrderForMode(appMode: AppMode) {
+  return appMode === 'editor' ? CLASSIFICATION_ORDER_WITH_KEIN : CLASSIFICATION_ORDER
+}
+
+/** „Alle“ = alle Klassen der aktuellen Ansicht plus Unklassifiziert aktiv. */
+function isAllSelected(filters: FilterState, appMode: AppMode): boolean {
+  if (!filters.showUnclassified) return false
+  for (const cls of classificationOrderForMode(appMode)) {
+    if (!filters[FILTER_KEY[cls]]) return false
+  }
+  return true
+}
+
+function setAllFilters(on: boolean, appMode: AppMode): FilterState {
+  if (appMode === 'viewer') {
+    return {
+      showAltbauGruen: on,
+      showAltbauGelb: on,
+      showAltbauRot: on,
+      showKeinAltbau: false,
+      showUnclassified: on,
+    }
+  }
+  return {
+    showAltbauGruen: on,
+    showAltbauGelb: on,
+    showAltbauRot: on,
+    showKeinAltbau: on,
+    showUnclassified: on,
+  }
+}
+
+function ClassificationFilterDropdown({
   filters,
-  setFilter,
-  idPrefix,
+  onFiltersChange,
   appMode,
 }: {
   filters: FilterState
-  setFilter: (key: keyof FilterState, value: boolean) => void
-  idPrefix: string
+  onFiltersChange: (filters: FilterState) => void
   appMode: AppMode
 }) {
-  const order =
-    appMode === 'editor' ? CLASSIFICATION_ORDER_WITH_KEIN : CLASSIFICATION_ORDER
-  return (
-    <>
-      {order.map((cls) => {
-        const key = FILTER_KEY[cls]
-        const hex = CLASSIFICATION_HEX[cls]
-        const id = `${idPrefix}-f-${cls}`
-        return (
-          <div key={cls} className="flex items-center gap-2">
-            <Checkbox
-              id={id}
-              checked={filters[key]}
-              onCheckedChange={(c) => setFilter(key, c === true)}
-            />
-            <Label htmlFor={id} className="flex cursor-pointer items-center gap-1.5 font-normal">
-              <span
-                className="h-3 w-3 shrink-0 rounded-full border border-border"
-                style={{ backgroundColor: hex }}
-                aria-hidden
-              />
-              {CLASSIFICATION_SHORT[cls]}
-            </Label>
-          </div>
-        )
-      })}
-    </>
-  )
-}
+  const order = classificationOrderForMode(appMode)
+  const setFilter = (key: keyof FilterState, value: boolean) => {
+    onFiltersChange({ ...filters, [key]: value })
+  }
+  const allOn = isAllSelected(filters, appMode)
 
-function ClassificationFilterDots({
-  filters,
-  setFilter,
-  idPrefix,
-  appMode,
-}: {
-  filters: FilterState
-  setFilter: (key: keyof FilterState, value: boolean) => void
-  idPrefix: string
-  appMode: AppMode
-}) {
-  const order =
-    appMode === 'editor' ? CLASSIFICATION_ORDER_WITH_KEIN : CLASSIFICATION_ORDER
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {order.map((cls) => {
-        const key = FILTER_KEY[cls]
-        const hex = CLASSIFICATION_HEX[cls]
-        const id = `${idPrefix}-d-${cls}`
-        return (
-          <div key={cls} className="flex items-center gap-1" title={CLASSIFICATION_SHORT[cls]}>
-            <Checkbox
-              id={id}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="gap-1">
+          Klassifizierung
+          <ChevronDown className="size-4 opacity-70" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        <DropdownMenuLabel>Einblendung</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          checked={allOn}
+          onCheckedChange={(c) => onFiltersChange(setAllFilters(c === true, appMode))}
+        >
+          Alle
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        {order.map((cls) => {
+          const key = FILTER_KEY[cls]
+          const hex = CLASSIFICATION_HEX[cls]
+          return (
+            <DropdownMenuCheckboxItem
+              key={cls}
               checked={filters[key]}
               onCheckedChange={(c) => setFilter(key, c === true)}
-              className="shrink-0"
-            />
-            <Label htmlFor={id} className="cursor-pointer p-0.5">
+            >
               <span
-                className="block h-3 w-3 rounded-full border border-border"
+                className="inline-block size-2.5 shrink-0 rounded-full border border-border"
                 style={{ backgroundColor: hex }}
                 aria-hidden
               />
-            </Label>
-          </div>
-        )
-      })}
-    </div>
+              <span className="min-w-0">{CLASSIFICATION_LABELS[cls]}</span>
+            </DropdownMenuCheckboxItem>
+          )
+        })}
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem
+          checked={filters.showUnclassified}
+          onCheckedChange={(c) => setFilter('showUnclassified', c === true)}
+        >
+          <span
+            className="inline-block size-2.5 shrink-0 rounded-full bg-muted-foreground/60"
+            aria-hidden
+          />
+          Unklassifiziert
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -159,22 +177,15 @@ export default function Toolbar({
   onFiltersChange,
   viewMode,
   onViewModeChange,
-  whiteMode,
-  onWhiteModeChange,
   onDeselectAll,
   selectedCount,
   lassoSelectActive,
   onLassoSelectActiveChange,
-  onExport,
-  onImport,
 }: ToolbarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const { hasPendingChanges, saveAllPending } = useClassification()
-  const setFilter = (key: keyof FilterState, value: boolean) => {
-    onFiltersChange({ ...filters, [key]: value })
-  }
 
-  const toolbarInner = (idPrefix: string) => (
+  const toolbarInner = (
     <>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground text-sm">Modus:</span>
@@ -212,41 +223,11 @@ export default function Toolbar({
         <ModeButton active={viewMode === '3d'} onClick={() => onViewModeChange('3d')}>
           3D
         </ModeButton>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-muted-foreground text-sm">Filter:</span>
-        <ClassificationFilterToggles
+        <ClassificationFilterDropdown
           filters={filters}
-          setFilter={setFilter}
-          idPrefix={idPrefix}
+          onFiltersChange={onFiltersChange}
           appMode={appMode}
         />
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={`${idPrefix}-uncl`}
-            checked={filters.showUnclassified}
-            onCheckedChange={(c) => setFilter('showUnclassified', c === true)}
-          />
-          <Label htmlFor={`${idPrefix}-uncl`} className="flex cursor-pointer items-center gap-1.5 font-normal">
-            <span className="h-3 w-3 shrink-0 rounded-full bg-muted-foreground/60" aria-hidden />
-            Unklassifiziert
-          </Label>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground text-sm">Darstellung:</span>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={`${idPrefix}-white`}
-            checked={whiteMode}
-            onCheckedChange={(c) => onWhiteModeChange(c === true)}
-          />
-          <Label htmlFor={`${idPrefix}-white`} className="cursor-pointer font-normal">
-            Weißmodus
-          </Label>
-        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -264,22 +245,13 @@ export default function Toolbar({
           </Button>
         )}
       </div>
-
-      <div className="flex flex-wrap items-center gap-2 md:ml-auto">
-        <Button type="button" variant="outline" size="sm" onClick={onExport}>
-          Export
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={onImport}>
-          Import
-        </Button>
-      </div>
     </>
   )
 
   return (
     <>
       <div className="bg-card text-card-foreground hidden flex-wrap items-center gap-4 border-b px-3 py-2 text-sm shadow-sm md:flex">
-        {toolbarInner('desk')}
+        {toolbarInner}
       </div>
 
       <div className="bg-card text-card-foreground border-b md:hidden">
@@ -334,39 +306,14 @@ export default function Toolbar({
               <ModeButton active={viewMode === '3d'} onClick={() => onViewModeChange('3d')}>
                 3D
               </ModeButton>
-            </div>
-            <Separator />
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-muted-foreground shrink-0 text-sm">Filter:</span>
-              <ClassificationFilterDots
+              <ClassificationFilterDropdown
                 filters={filters}
-                setFilter={setFilter}
-                idPrefix="mob"
+                onFiltersChange={onFiltersChange}
                 appMode={appMode}
               />
-              <div className="flex items-center gap-1">
-                <Checkbox
-                  id="mob-uncl"
-                  checked={filters.showUnclassified}
-                  onCheckedChange={(c) => setFilter('showUnclassified', c === true)}
-                />
-                <Label htmlFor="mob-uncl" className="cursor-pointer p-0.5">
-                  <span className="block h-3 w-3 rounded-full bg-muted-foreground/60" aria-hidden />
-                </Label>
-              </div>
             </div>
             <Separator />
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="mob-white"
-                  checked={whiteMode}
-                  onCheckedChange={(c) => onWhiteModeChange(c === true)}
-                />
-                <Label htmlFor="mob-white" className="cursor-pointer font-normal">
-                  Weißmodus
-                </Label>
-              </div>
               {appMode === 'editor' && (
                 <Button
                   type="button"
@@ -383,15 +330,6 @@ export default function Toolbar({
                   Abwählen ({selectedCount})
                 </Button>
               )}
-            </div>
-            <Separator />
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={onExport}>
-                Export
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={onImport}>
-                Import
-              </Button>
             </div>
           </div>
         </SheetContent>

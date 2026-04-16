@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import {
+  AUTH_TOKEN_KEY,
+  approveUserPhotoUpload,
+  fetchPendingUploadUsers,
+  type PendingUploadUser,
+} from '@/services/authApi'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,7 +22,7 @@ interface AccountSettingsDialogProps {
 }
 
 export default function AccountSettingsDialog({ open, onClose }: AccountSettingsDialogProps) {
-  const { user, updateDisplayName, updateEmail, changePassword, deleteAccount } = useAuth()
+  const { user, updateDisplayName, updateEmail, changePassword, deleteAccount, refreshMe } = useAuth()
   const [emailPwd, setEmailPwd] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [oldPwd, setOldPwd] = useState('')
@@ -28,6 +34,9 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [pendingUploadUsers, setPendingUploadUsers] = useState<PendingUploadUser[]>([])
+  const [pendingUploadLoading, setPendingUploadLoading] = useState(false)
+  const [approveBusyId, setApproveBusyId] = useState<number | null>(null)
 
   useEffect(() => {
     if (open && user?.email) {
@@ -35,6 +44,39 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
       setDisplayNameInput(user.displayName ?? '')
     }
   }, [open, user?.email, user?.displayName])
+
+  useEffect(() => {
+    if (!open || user?.isAccountApprover !== true) {
+      setPendingUploadUsers([])
+      return
+    }
+    let cancelled = false
+    setPendingUploadLoading(true)
+    const token = (() => {
+      try {
+        return localStorage.getItem(AUTH_TOKEN_KEY)
+      } catch {
+        return null
+      }
+    })()
+    if (!token) {
+      setPendingUploadLoading(false)
+      return
+    }
+    void fetchPendingUploadUsers(token)
+      .then((list) => {
+        if (!cancelled) setPendingUploadUsers(list)
+      })
+      .catch(() => {
+        if (!cancelled) setPendingUploadUsers([])
+      })
+      .finally(() => {
+        if (!cancelled) setPendingUploadLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, user?.isAccountApprover])
 
   const resetForms = () => {
     setEmailPwd('')
@@ -129,6 +171,30 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
     }
   }
 
+  const onApproveUpload = async (targetId: number) => {
+    const token = (() => {
+      try {
+        return localStorage.getItem(AUTH_TOKEN_KEY)
+      } catch {
+        return null
+      }
+    })()
+    if (!token) return
+    setErr(null)
+    setMsg(null)
+    setApproveBusyId(targetId)
+    try {
+      await approveUserPhotoUpload(token, targetId)
+      setPendingUploadUsers((prev) => prev.filter((u) => u.id !== targetId))
+      setMsg('Nutzer wurde für Foto-Uploads freigeschaltet.')
+      await refreshMe()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Freigabe fehlgeschlagen')
+    } finally {
+      setApproveBusyId(null)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto" showCloseButton>
@@ -138,6 +204,42 @@ export default function AccountSettingsDialog({ open, onClose }: AccountSettings
         <div className="space-y-6">
           {err && <p className="text-destructive text-sm">{err}</p>}
           {msg && !err && <p className="text-muted-foreground text-sm">{msg}</p>}
+
+          {user?.isAccountApprover === true && (
+            <div className="space-y-3 border-b border-border pb-6">
+              <p className="font-medium">Foto-Upload: wartende Konten</p>
+              <p className="text-muted-foreground text-xs">
+                Neue Registrierungen können erst nach deiner Freigabe Fotos hochladen.
+              </p>
+              {pendingUploadLoading ? (
+                <p className="text-muted-foreground text-sm">Lade Liste …</p>
+              ) : pendingUploadUsers.length === 0 ? (
+                <p className="text-muted-foreground text-sm">Keine ausstehenden Konten.</p>
+              ) : (
+                <ul className="max-h-48 space-y-2 overflow-y-auto text-sm">
+                  {pendingUploadUsers.map((u) => (
+                    <li
+                      key={u.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2"
+                    >
+                      <span className="min-w-0">
+                        <span className="font-medium">{u.displayName}</span>
+                        <span className="text-muted-foreground block text-xs">{u.emailMasked}</span>
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={approveBusyId !== null}
+                        onClick={() => void onApproveUpload(u.id)}
+                      >
+                        {approveBusyId === u.id ? '…' : 'Freischalten'}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <form onSubmit={onSubmitDisplayName} className="space-y-3 border-b border-border pb-6">
             <p className="font-medium">Anzeigename</p>

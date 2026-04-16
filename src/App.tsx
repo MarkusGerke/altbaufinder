@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import MapView, { type SelectedBuildingGeo } from './components/MapView'
 import Toolbar, { type FilterState } from './components/Toolbar'
 import BuildingDetailPanel from './components/BuildingDetailPanel'
@@ -8,10 +8,8 @@ import AccountSettingsDialog from './components/AccountSettingsDialog'
 import AuthModal from './components/AuthModal'
 import PasswordResetDialog from './components/PasswordResetDialog'
 import { Button } from '@/components/ui/button'
-import { useClassification } from './context/ClassificationContext'
 import { useAuth } from './context/AuthContext'
 import type { AppMode } from './types'
-import type { ClassificationEntry } from './types'
 import { segmentStorageKey } from '@/utils/segmentStorageKey'
 
 const DEFAULT_FILTERS: FilterState = {
@@ -21,8 +19,6 @@ const DEFAULT_FILTERS: FilterState = {
   showKeinAltbau: true,
   showUnclassified: false,
 }
-
-const EXPORT_FILENAME = 'altbaufinder-classifications.json'
 
 function App() {
   const { user, score, logout, isLoggedIn } = useAuth()
@@ -47,12 +43,8 @@ function App() {
   const [appMode, setAppMode] = useState<AppMode>('viewer')
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d')
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
-  const [whiteMode, setWhiteMode] = useState(false)
   const [selectedBuildings, setSelectedBuildings] = useState<SelectedBuildingGeo[]>([])
   const [lassoSelectActive, setLassoSelectActive] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const { classifications, importClassifications } = useClassification()
-
   useEffect(() => {
     if (appMode === 'viewer') setLassoSelectActive(false)
   }, [appMode])
@@ -85,44 +77,6 @@ function App() {
       return next
     })
   }, [])
-
-  const handleExport = useCallback(() => {
-    const payload = { exportedAt: new Date().toISOString(), classifications }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = EXPORT_FILENAME
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [classifications])
-
-  const handleImport = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const onFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      e.target.value = ''
-      if (!file) return
-      const reader = new FileReader()
-      reader.onload = () => {
-        try {
-          const text = reader.result as string
-          const data = JSON.parse(text) as { classifications?: Record<string, ClassificationEntry> }
-          const map = data.classifications ?? data
-          if (typeof map === 'object' && map !== null) {
-            importClassifications(map as Record<string, ClassificationEntry>)
-          }
-        } catch {
-          // invalid JSON or structure – ignore
-        }
-      }
-      reader.readAsText(file)
-    },
-    [importClassifications]
-  )
 
   return (
     <div className="flex h-screen w-full flex-col">
@@ -178,22 +132,10 @@ function App() {
         onFiltersChange={setFilters}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        whiteMode={whiteMode}
-        onWhiteModeChange={setWhiteMode}
         onDeselectAll={() => setSelectedBuildings([])}
         selectedCount={selectedBuildings.length}
         lassoSelectActive={lassoSelectActive}
         onLassoSelectActiveChange={setLassoSelectActive}
-        onExport={handleExport}
-        onImport={handleImport}
-      />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json,application/json"
-        className="hidden"
-        aria-hidden
-        onChange={onFileChange}
       />
       <main className="flex-1 min-h-0 flex relative">
         <MapView
@@ -202,7 +144,6 @@ function App() {
           onLassoSelectBuildings={onLassoSelectBuildings}
           filters={filters}
           viewMode={viewMode}
-          whiteMode={whiteMode}
           selectedBuildings={selectedBuildings}
           appMode={appMode}
         />

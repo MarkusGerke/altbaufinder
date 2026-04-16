@@ -231,6 +231,15 @@ export function BuildingPhotoCapture({ buildingId, buildingGeometry }: Props) {
     )
   }
 
+  if (user?.canUploadPhotos === false) {
+    return (
+      <p className="text-muted-foreground text-xs leading-relaxed">
+        Foto-Uploads sind für dein Konto noch nicht freigeschaltet. Du kannst aufnehmen, sobald ein Administrator
+        dein Konto freigibt. Die Kartennutzung und Markierungen bleiben davon unberührt.
+      </p>
+    )
+  }
+
   const p = status?.photo
 
   return (

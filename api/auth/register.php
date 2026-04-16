@@ -17,6 +17,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../auth_helpers.php';
+require_once __DIR__ . '/../rate_limit.php';
+
+json_security_headers();
 
 $secret = jwt_secret();
 if ($secret === '') {
@@ -29,6 +32,26 @@ $input = json_decode(file_get_contents('php://input'), true);
 if (!is_array($input)) {
     http_response_code(400);
     echo json_encode(['error' => 'Ungültige Eingabe']);
+    exit;
+}
+
+$ip = rate_limit_client_ip();
+if (!rate_limit_allow('register', $ip, 12, 3600)) {
+    http_response_code(429);
+    echo json_encode(['error' => 'Zu viele Registrierungsversuche. Bitte später erneut versuchen.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+$turnToken = isset($input['turnstileToken']) ? (string) $input['turnstileToken'] : null;
+$tv = turnstile_verify_token($turnToken, $ip);
+if ($tv === false) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Sicherheitsprüfung fehlgeschlagen. Bitte Formular erneut senden.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($tv !== true) {
+    http_response_code(503);
+    echo json_encode(['error' => 'Registrierung vorübergehend nicht möglich (Sicherheitsdienst).'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -72,18 +95,20 @@ try {
         }
     }
 
-    $stmt = $pdo->prepare('INSERT INTO users (email, display_name, password_hash) VALUES (:e, :dn, :h)');
+    $stmt = $pdo->prepare(
+        'INSERT INTO users (email, display_name, password_hash, can_upload_photos) VALUES (:e, :dn, :h, 0)'
+    );
     $stmt->execute([':e' => $email, ':dn' => $displayName, ':h' => $hash]);
     $id = (int) $pdo->lastInsertId();
     $token = jwt_encode(['sub' => $id], $secret);
     echo json_encode([
         'token' => $token,
-        'user'  => [
-            'id'          => $id,
-            'email'       => $email,
-            'displayName' => $displayName,
-            'isPhotoModerator' => is_photo_moderator($id),
-        ],
+        'user'  => auth_user_from_db_row([
+            'id' => $id,
+            'email' => $email,
+            'display_name' => $displayName,
+            'can_upload_photos' => 0,
+        ]),
     ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     if ($e->getCode() === 23000 || str_contains($e->getMessage(), 'Duplicate')) {

@@ -17,7 +17,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../auth_helpers.php';
+require_once __DIR__ . '/../rate_limit.php';
 require_once __DIR__ . '/../mail_send.php';
+
+json_security_headers();
+
+$ip = rate_limit_client_ip();
+if (!rate_limit_allow('password_reset', $ip, 8, 3600)) {
+    http_response_code(429);
+    echo json_encode(['error' => 'Zu viele Anfragen. Bitte später erneut versuchen.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 $neutral = [
     'ok'      => true,

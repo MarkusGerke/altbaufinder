@@ -32,6 +32,16 @@ return [
      * Alternativ: Umgebungsvariable ALTBAUFINDER_PHOTO_MODERATOR_IDS="1,2"
      */
     // 'photo_moderator_user_ids' => [1],
+    /**
+     * Optional: User-IDs (users.id), die neue Konten für Foto-Uploads freischalten dürfen.
+     * Alternativ: Umgebungsvariable ALTBAUFINDER_ACCOUNT_APPROVER_IDS="1,2"
+     */
+    // 'account_approver_user_ids' => [1],
+    /**
+     * Optional: Cloudflare Turnstile bei der Registrierung (Secret; Site-Key im Frontend VITE_TURNSTILE_SITE_KEY).
+     * Alternativ: Umgebungsvariable ALTBAUFINDER_TURNSTILE_SECRET
+     */
+    // 'turnstile_secret' => '0x…',
     /*
      * Hinweis Datenschutz / Konto-Löschen: Beim Löschen eines Nutzers entfallen die Zeilen in
      * user_building_marks (Scores). Tabelle classifications (Farbklassifikationen pro Gebäude) ist global

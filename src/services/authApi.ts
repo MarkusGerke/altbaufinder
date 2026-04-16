@@ -20,6 +20,9 @@ export interface AuthUser {
   displayName: string
   /** Gesetzt nach /auth/me.php – Foto-Moderation. */
   isPhotoModerator?: boolean
+  /** false = wartet auf Freigabe für Gebäudefoto-Upload (fehlendes Feld = true für ältere API). */
+  canUploadPhotos: boolean
+  isAccountApprover?: boolean
 }
 
 function parseAuthUser(raw: {
@@ -27,6 +30,8 @@ function parseAuthUser(raw: {
   email: string
   displayName?: string | null
   isPhotoModerator?: boolean
+  canUploadPhotos?: boolean
+  isAccountApprover?: boolean
 }): AuthUser {
   const dn =
     raw.displayName != null && String(raw.displayName).trim() !== ''
@@ -36,7 +41,9 @@ function parseAuthUser(raw: {
     id: raw.id,
     email: raw.email,
     displayName: dn,
+    canUploadPhotos: raw.canUploadPhotos !== false,
     ...(raw.isPhotoModerator === true ? { isPhotoModerator: true } : {}),
+    ...(raw.isAccountApprover === true ? { isAccountApprover: true } : {}),
   }
 }
 
@@ -48,7 +55,8 @@ export interface MeResponse {
 export async function authRegister(
   email: string,
   password: string,
-  displayName?: string
+  displayName?: string,
+  turnstileToken?: string
 ): Promise<{ token: string; user: AuthUser }> {
   const res = await fetch(`${API_BASE}/auth/register.php`, {
     method: 'POST',
@@ -58,6 +66,9 @@ export async function authRegister(
       password,
       ...(displayName != null && displayName.trim() !== ''
         ? { displayName: displayName.trim() }
+        : {}),
+      ...(turnstileToken != null && turnstileToken !== ''
+        ? { turnstileToken }
         : {}),
     }),
   })
@@ -182,4 +193,30 @@ export async function deleteAccountApi(token: string, password: string): Promise
   })
   const data = await readJsonResponse<{ error?: string; detail?: string; ok?: boolean }>(res)
   if (!res.ok) throwAuthError(res, data, 'Konto konnte nicht gelöscht werden')
+}
+
+export interface PendingUploadUser {
+  id: number
+  emailMasked: string
+  displayName: string
+  createdAt: string
+}
+
+export async function fetchPendingUploadUsers(token: string): Promise<PendingUploadUser[]> {
+  const res = await fetch(`${API_BASE}/auth/users-pending-upload.php`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const data = await readJsonResponse<{ users?: PendingUploadUser[]; error?: string; detail?: string }>(res)
+  if (!res.ok) throwAuthError(res, data, 'Liste konnte nicht geladen werden')
+  return data.users ?? []
+}
+
+export async function approveUserPhotoUpload(token: string, userId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/user-approve-upload.php`, {
+    method: 'POST',
+    headers: jsonAuthHeaders(token),
+    body: JSON.stringify({ userId }),
+  })
+  const data = await readJsonResponse<{ error?: string; detail?: string; ok?: boolean }>(res)
+  if (!res.ok) throwAuthError(res, data, 'Freigabe fehlgeschlagen')
 }

@@ -17,6 +17,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../auth_helpers.php';
+require_once __DIR__ . '/../rate_limit.php';
+
+json_security_headers();
 
 $secret = jwt_secret();
 if ($secret === '') {
@@ -41,30 +44,31 @@ if ($email === '' || !is_string($password)) {
     exit;
 }
 
+$ip = rate_limit_client_ip();
+if (!rate_limit_allow('login', $ip, 40, 3600)) {
+    http_response_code(429);
+    echo json_encode(['error' => 'Zu viele Anmeldeversuche. Bitte später erneut versuchen.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 try {
     $pdo = getDbConnection();
     ensure_marks_tables($pdo);
-    $stmt = $pdo->prepare('SELECT id, email, display_name, password_hash FROM users WHERE email = :e LIMIT 1');
+    $stmt = $pdo->prepare(
+        'SELECT id, email, display_name, password_hash, COALESCE(can_upload_photos, 1) AS can_upload_photos FROM users WHERE email = :e LIMIT 1'
+    );
     $stmt->execute([':e' => $email]);
-    $row = $stmt->fetch();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row || !password_verify($password, $row['password_hash'])) {
         http_response_code(401);
         echo json_encode(['error' => 'E-Mail oder Passwort falsch']);
         exit;
     }
     $id = (int) $row['id'];
-    $dn = isset($row['display_name']) && $row['display_name'] !== ''
-        ? (string) $row['display_name']
-        : ('Nutzer' . $id);
     $token = jwt_encode(['sub' => $id], $secret);
     echo json_encode([
         'token' => $token,
-        'user'  => [
-            'id' => $id,
-            'email' => $row['email'],
-            'displayName' => $dn,
-            'isPhotoModerator' => is_photo_moderator($id),
-        ],
+        'user'  => auth_user_from_db_row($row),
     ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     http_response_code(500);

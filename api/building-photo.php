@@ -18,6 +18,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth_helpers.php';
+require_once __DIR__ . '/rate_limit.php';
+
+json_security_headers();
 
 const PHOTO_MAX_DISTANCE_M = 250.0;
 const PHOTO_MAX_BYTES = 6 * 1024 * 1024;
@@ -255,6 +258,11 @@ if ($method === 'GET') {
             }
         }
 
+        if ($canUpload && !user_can_upload_photos($pdo, (int) $userId)) {
+            $canUpload = false;
+            $reason = 'Dein Konto ist noch nicht für Foto-Uploads freigeschaltet. Bitte warte auf die Freigabe oder kontaktiere den Betreiber.';
+        }
+
         $photo = [
             'hasPhoto' => false,
             'moderationStatus' => null,
@@ -335,6 +343,20 @@ if ($userId === null) {
 
 ensure_marks_tables($pdo);
 ensure_building_photos_table($pdo);
+
+if (!rate_limit_allow('photo_upload', 'uid:' . (int) $userId, 30, 3600)) {
+    http_response_code(429);
+    echo json_encode(['error' => 'Zu viele Uploads. Bitte später erneut versuchen.'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if (!user_can_upload_photos($pdo, (int) $userId)) {
+    http_response_code(403);
+    echo json_encode([
+        'error' => 'Dein Konto ist noch nicht für Foto-Uploads freigeschaltet. Bitte warte auf die Freigabe.',
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 $bid = isset($_POST['building_id']) ? trim((string) $_POST['building_id']) : '';
 $latS = $_POST['lat'] ?? '';
