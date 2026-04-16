@@ -25,6 +25,11 @@ return [
      */
     'mail_from'      => 'noreply@deine-domain.de',
     'public_app_url' => 'https://deine-domain.de',
+    /**
+     * Optional: User-IDs (users.id), die Gebäudefotos moderieren dürfen (Freigabe / Ablehnung).
+     * Alternativ: Umgebungsvariable ALTBAUFINDER_PHOTO_MODERATOR_IDS="1,2"
+     */
+    // 'photo_moderator_user_ids' => [1],
     /*
      * Hinweis Datenschutz / Konto-Löschen: Beim Löschen eines Nutzers entfallen die Zeilen in
      * user_building_marks (Scores). Tabelle classifications (Farbklassifikationen pro Gebäude) ist global

@@ -1,9 +1,12 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { X } from 'lucide-react'
-import type { BuildingClassification } from '../types'
+import type { BuildingClassification, BuildingUse } from '../types'
 import { useClassification } from '../context/ClassificationContext'
 import type { SelectedBuildingGeo } from './MapView'
 import { segmentStorageKey } from '../utils/segmentStorageKey'
+import { BUILDING_USE_LABELS, BUILDING_USE_ORDER } from '@/lib/buildingUseLabels'
+import { fetchOsmBuildingSuggestion, parseOsmElementId } from '@/services/osmSuggestionApi'
+import { BuildingPhotoCapture } from '@/components/BuildingPhotoCapture'
 import {
   CLASSIFICATION_HEX,
   CLASSIFICATION_LABELS,
@@ -93,15 +96,60 @@ function osmLinkFromId(id: string): string | null {
 }
 
 function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildingGeo; isEditor: boolean }) {
-  const { getClassification, setClassification, getYearOfConstruction, setYearOfConstruction } = useClassification()
+  const {
+    classifications,
+    getClassification,
+    setClassification,
+    getYearOfConstruction,
+    setYearOfConstruction,
+    setBuildingUse,
+  } = useClassification()
   const storageKey = useMemo(() => segmentStorageKey(building.id, building.geometry), [building.id, building.geometry])
   const classification = getClassification(storageKey)
   const savedYear = getYearOfConstruction(storageKey)
   const [yearInput, setYearInput] = useState<string>(savedYear != null ? String(savedYear) : '')
+  const entryBuildingUse = classifications[storageKey]?.buildingUse ?? null
+  const storedBuildingUse = entryBuildingUse
+  const [selectedBuildingUse, setSelectedBuildingUse] = useState<BuildingUse>('unbekannt')
+  const buildingUseRef = useRef<BuildingUse>('unbekannt')
+  const userTouchedBuildingUse = useRef(false)
+  const entryBuildingUseRef = useRef(entryBuildingUse)
+  entryBuildingUseRef.current = entryBuildingUse
+  const [osmLabel, setOsmLabel] = useState<string | null>(null)
+  const [osmConfidence, setOsmConfidence] = useState<'high' | 'low' | null>(null)
 
   useEffect(() => {
     setYearInput(savedYear != null ? String(savedYear) : '')
   }, [storageKey, savedYear])
+
+  useEffect(() => {
+    userTouchedBuildingUse.current = false
+    setSelectedBuildingUse(entryBuildingUse ?? 'unbekannt')
+  }, [storageKey, entryBuildingUse])
+
+  useEffect(() => {
+    buildingUseRef.current = selectedBuildingUse
+  }, [selectedBuildingUse])
+
+  useEffect(() => {
+    if (!parseOsmElementId(building.id)) {
+      setOsmLabel(null)
+      setOsmConfidence(null)
+      return
+    }
+    let cancelled = false
+    void fetchOsmBuildingSuggestion(building.id).then((r) => {
+      if (cancelled || !r) return
+      setOsmLabel(r.labelDe)
+      setOsmConfidence(r.confidence)
+      if (!userTouchedBuildingUse.current && entryBuildingUseRef.current == null) {
+        setSelectedBuildingUse(r.buildingUse)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [building.id, storageKey])
 
   const renderHeight = building.properties['render_height'] as number | undefined
   const height = renderHeight != null ? `${renderHeight} m` : '–'
@@ -148,9 +196,58 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
             <dd>{savedYear}</dd>
           </div>
         )}
+        {storedBuildingUse != null && (
+          <div>
+            <dt className="text-muted-foreground">Gebäudenutzung</dt>
+            <dd>{BUILDING_USE_LABELS[storedBuildingUse]}</dd>
+          </div>
+        )}
       </dl>
       {isEditor && (
         <>
+          <Separator className="my-4" />
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Gebäudefoto</p>
+            <BuildingPhotoCapture buildingId={storageKey} buildingGeometry={building.geometry} />
+          </div>
+          <Separator className="my-4" />
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-xs">
+              Nutzung (Vorschlag aus OpenStreetMap, nur lesend; optional anpassbar, nicht nach OSM zurückgeschrieben):
+            </p>
+            {osmLabel && (
+              <p className="text-muted-foreground text-xs">
+                OSM-Vorschlag: <span className="text-foreground">{osmLabel}</span>
+                {osmConfidence ? ` (${osmConfidence === 'high' ? 'eindeutige Tags' : 'unscharfe Tags'})` : ''}
+              </p>
+            )}
+            <label htmlFor="building-use-select" className="text-muted-foreground sr-only">
+              Gebäudenutzung
+            </label>
+            <select
+              id="building-use-select"
+              className="border-input bg-background w-full rounded-md border px-2 py-1.5 text-sm"
+              value={selectedBuildingUse}
+              onChange={(e) => {
+                const v = e.target.value as BuildingUse
+                userTouchedBuildingUse.current = true
+                setSelectedBuildingUse(v)
+                buildingUseRef.current = v
+                if (classification) {
+                  setBuildingUse(storageKey, v)
+                }
+              }}
+            >
+              {BUILDING_USE_ORDER.map((u) => (
+                <option key={u} value={u}>
+                  {BUILDING_USE_LABELS[u]}
+                </option>
+              ))}
+            </select>
+            <p className="text-muted-foreground text-[10px] leading-snug">
+              © OpenStreetMap-Mitwirkende, ODbL. Es werden keine Daten an OSM gesendet.
+            </p>
+          </div>
           <Separator className="my-4" />
           <div className="space-y-2">
             <p className="text-muted-foreground text-xs">
@@ -158,7 +255,14 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
             </p>
             <ClassificationButtons
               onClassify={(c) =>
-                setClassification(storageKey, c, undefined, building.geometry, building.vectorFeatureId ?? null)
+                setClassification(
+                  storageKey,
+                  c,
+                  undefined,
+                  building.geometry,
+                  building.vectorFeatureId ?? null,
+                  buildingUseRef.current
+                )
               }
               activeClassification={classification}
             />

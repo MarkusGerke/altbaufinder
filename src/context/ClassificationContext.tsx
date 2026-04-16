@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { BuildingClassification, ClassificationEntry } from '../types'
+import type { BuildingClassification, BuildingUse, ClassificationEntry } from '../types'
 import { loadClassifications, migrateLegacyClassification, saveClassifications } from '../store/classificationStore'
 import {
   fetchClassifications,
@@ -27,11 +27,14 @@ interface ClassificationContextValue {
     classification: BuildingClassification,
     yearOfConstruction?: number | null,
     geometry?: GeoJSON.Geometry | null,
-    vectorFeatureId?: number | null
+    vectorFeatureId?: number | null,
+    buildingUse?: BuildingUse | null
   ) => void
   getClassification: (buildingId: string) => BuildingClassification
   getYearOfConstruction: (buildingId: string) => number | null | undefined
+  getBuildingUse: (buildingId: string) => BuildingUse | null | undefined
   setYearOfConstruction: (buildingId: string, year: number | null) => void
+  setBuildingUse: (buildingId: string, buildingUse: BuildingUse | null) => void
   importClassifications: (data: ClassificationState) => void
   hasPendingChanges: boolean
   saveAllPending: () => void
@@ -77,7 +80,8 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
       classification: BuildingClassification,
       yearOfConstruction?: number | null,
       geometry?: GeoJSON.Geometry | null,
-      vectorFeatureId?: number | null
+      vectorFeatureId?: number | null,
+      buildingUse?: BuildingUse | null
     ) => {
     setClassifications((prev) => {
       const next = { ...prev }
@@ -89,11 +93,14 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
           vectorFeatureId !== undefined && vectorFeatureId !== null
             ? vectorFeatureId
             : existing?.vectorFeatureId
+        const nextBuildingUse =
+          buildingUse !== undefined ? buildingUse : (existing?.buildingUse ?? null)
         next[buildingId] = {
           classification,
           yearOfConstruction: yearOfConstruction !== undefined ? yearOfConstruction : (existing?.yearOfConstruction ?? null),
           lastModified: Date.now(),
           geometry: geometry !== undefined ? geometry : (existing?.geometry ?? null),
+          buildingUse: nextBuildingUse,
           ...(nextVectorId !== undefined && nextVectorId !== null ? { vectorFeatureId: nextVectorId } : {}),
         }
       }
@@ -128,6 +135,25 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
       if (!existing) return prev
       const next = { ...prev, [buildingId]: { ...existing, yearOfConstruction: year, lastModified: Date.now() } }
       return next
+    })
+    setDirtyIds((prev) => new Set(prev).add(buildingId))
+  }, [])
+
+  const getBuildingUse = useCallback(
+    (buildingId: string): BuildingUse | null | undefined => {
+      return classifications[buildingId]?.buildingUse
+    },
+    [classifications]
+  )
+
+  const setBuildingUse = useCallback((buildingId: string, buildingUse: BuildingUse | null) => {
+    setClassifications((prev) => {
+      const existing = prev[buildingId]
+      if (!existing) return prev
+      return {
+        ...prev,
+        [buildingId]: { ...existing, buildingUse, lastModified: Date.now() },
+      }
     })
     setDirtyIds((prev) => new Set(prev).add(buildingId))
   }, [])
@@ -171,12 +197,12 @@ export function ClassificationProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ClassificationContextValue>(
     () => ({
-      classifications, setClassification, getClassification, getYearOfConstruction,
-      setYearOfConstruction, importClassifications,
+      classifications, setClassification, getClassification, getYearOfConstruction, getBuildingUse,
+      setYearOfConstruction, setBuildingUse, importClassifications,
       hasPendingChanges, saveAllPending,
     }),
-    [classifications, setClassification, getClassification, getYearOfConstruction,
-     setYearOfConstruction, importClassifications,
+    [classifications, setClassification, getClassification, getYearOfConstruction, getBuildingUse,
+     setYearOfConstruction, setBuildingUse, importClassifications,
      hasPendingChanges, saveAllPending]
   )
 

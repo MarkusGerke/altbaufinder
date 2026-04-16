@@ -82,6 +82,7 @@ try {
             'id'          => $id,
             'email'       => $email,
             'displayName' => $displayName,
+            'isPhotoModerator' => is_photo_moderator($id),
         ],
     ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {

@@ -47,6 +47,7 @@ try {
             'id'          => (int) $row['id'],
             'email'       => $row['email'],
             'displayName' => $dn,
+            'isPhotoModerator' => is_photo_moderator((int) $row['id']),
         ],
         'score' => $score,
     ], JSON_UNESCAPED_UNICODE);

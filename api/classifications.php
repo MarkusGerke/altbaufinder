@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth_helpers.php';
+require_once __DIR__ . '/building_use_mapping.php';
 
 function normalize_classification_value(?string $v): ?string {
     if ($v === null || $v === '') {
@@ -86,6 +87,18 @@ try {
     // ohne geometry_json weiter
 }
 
+$hasBuildingUseCol = false;
+try {
+    $colsBu = $pdo->query("SHOW COLUMNS FROM classifications LIKE 'building_use'")->fetchAll();
+    $hasBuildingUseCol = count($colsBu) > 0;
+    if (!$hasBuildingUseCol) {
+        $pdo->exec('ALTER TABLE classifications ADD COLUMN building_use VARCHAR(64) NULL');
+        $hasBuildingUseCol = true;
+    }
+} catch (Exception $e) {
+    // optional
+}
+
 // Einmalige Datenmigration: alte Stufen-Strings → altbau_gruen / gelb / rot
 try {
     $pdo->exec(
@@ -104,9 +117,12 @@ $userId = auth_user_id_from_request();
 
 try {
     if ($method === 'GET') {
-        $sql = $hasGeomCol
-            ? 'SELECT building_id, classification, year_of_construction, last_modified, geometry_json FROM classifications'
-            : 'SELECT building_id, classification, year_of_construction, last_modified FROM classifications';
+        $selectGeom = $hasGeomCol ? ', geometry_json' : '';
+        $selectBu = $hasBuildingUseCol ? ', building_use' : '';
+        $sql = 'SELECT building_id, classification, year_of_construction, last_modified'
+            . $selectGeom
+            . $selectBu
+            . ' FROM classifications';
         $stmt = $pdo->query($sql);
         $rows = $stmt->fetchAll();
         $result = [];
@@ -117,12 +133,20 @@ try {
                 $geom = is_array($decoded) ? $decoded : null;
             }
             $cls = normalize_classification_value($row['classification']);
-            $result[$row['building_id']] = [
+            $bu = null;
+            if ($hasBuildingUseCol && isset($row['building_use'])) {
+                $bu = normalize_building_use(is_string($row['building_use']) ? $row['building_use'] : null);
+            }
+            $entry = [
                 'classification'     => $cls,
                 'yearOfConstruction' => $row['year_of_construction'] !== null ? (int) $row['year_of_construction'] : null,
                 'lastModified'       => (int) $row['last_modified'],
                 'geometry'           => $geom,
             ];
+            if ($hasBuildingUseCol) {
+                $entry['buildingUse'] = $bu;
+            }
+            $result[$row['building_id']] = $entry;
         }
         echo json_encode($result);
         exit;
@@ -144,11 +168,23 @@ try {
             exit;
         }
 
-        if ($hasGeomCol) {
+        if ($hasGeomCol && $hasBuildingUseCol) {
+            $stmt = $pdo->prepare(
+                'INSERT INTO classifications (building_id, classification, year_of_construction, geometry_json, building_use, last_modified)
+                 VALUES (:id, :cls, :year, :geom, :buse, :ts)
+                 ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, geometry_json = :geom2, building_use = :buse2, last_modified = :ts2'
+            );
+        } elseif ($hasGeomCol) {
             $stmt = $pdo->prepare(
                 'INSERT INTO classifications (building_id, classification, year_of_construction, geometry_json, last_modified)
                  VALUES (:id, :cls, :year, :geom, :ts)
                  ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, geometry_json = :geom2, last_modified = :ts2'
+            );
+        } elseif ($hasBuildingUseCol) {
+            $stmt = $pdo->prepare(
+                'INSERT INTO classifications (building_id, classification, year_of_construction, building_use, last_modified)
+                 VALUES (:id, :cls, :year, :buse, :ts)
+                 ON DUPLICATE KEY UPDATE classification = :cls2, year_of_construction = :year2, building_use = :buse2, last_modified = :ts2'
             );
         } else {
             $stmt = $pdo->prepare(
@@ -172,15 +208,49 @@ try {
             $year = isset($entry['yearOfConstruction']) ? (int) $entry['yearOfConstruction'] : null;
             $ts = isset($entry['lastModified']) ? (int) $entry['lastModified'] : (int) (microtime(true) * 1000);
 
+            $buse = null;
+            if ($hasBuildingUseCol) {
+                if (!array_key_exists('buildingUse', $entry)) {
+                    $prevStmt = $pdo->prepare('SELECT building_use FROM classifications WHERE building_id = :id LIMIT 1');
+                    $prevStmt->execute([':id' => $buildingId]);
+                    $prevRow = $prevStmt->fetch(PDO::FETCH_ASSOC);
+                    $buse = $prevRow && isset($prevRow['building_use'])
+                        ? normalize_building_use(is_string($prevRow['building_use']) ? $prevRow['building_use'] : null)
+                        : null;
+                } else {
+                    $rawBu = $entry['buildingUse'];
+                    if ($rawBu === null || $rawBu === '') {
+                        $buse = null;
+                    } elseif (is_string($rawBu)) {
+                        $buse = normalize_building_use($rawBu);
+                    }
+                }
+            }
+
+            $geomJson = null;
             if ($hasGeomCol) {
-                $geomJson = null;
                 if (isset($entry['geometry']) && is_array($entry['geometry'])) {
                     $geomJson = json_encode($entry['geometry'], JSON_UNESCAPED_UNICODE);
                 }
+            }
+
+            if ($hasGeomCol && $hasBuildingUseCol) {
+                $stmt->execute([
+                    ':id' => $buildingId, ':cls' => $cls, ':year' => $year,
+                    ':geom' => $geomJson, ':buse' => $buse, ':ts' => $ts,
+                    ':cls2' => $cls, ':year2' => $year, ':geom2' => $geomJson, ':buse2' => $buse, ':ts2' => $ts,
+                ]);
+            } elseif ($hasGeomCol) {
                 $stmt->execute([
                     ':id' => $buildingId, ':cls' => $cls, ':year' => $year,
                     ':geom' => $geomJson, ':ts' => $ts,
                     ':cls2' => $cls, ':year2' => $year, ':geom2' => $geomJson, ':ts2' => $ts,
+                ]);
+            } elseif ($hasBuildingUseCol) {
+                $stmt->execute([
+                    ':id' => $buildingId, ':cls' => $cls, ':year' => $year,
+                    ':buse' => $buse, ':ts' => $ts,
+                    ':cls2' => $cls, ':year2' => $year, ':buse2' => $buse, ':ts2' => $ts,
                 ]);
             } else {
                 $stmt->execute([

@@ -188,6 +188,46 @@ function normalize_display_name_input(?string $raw): ?string {
     return $s;
 }
 
+/**
+ * User-IDs, die Gebäudefotos freigeben oder ablehnen dürfen (config.php: photo_moderator_user_ids
+ * oder Umgebung ALTBAUFINDER_PHOTO_MODERATOR_IDS="1,2,3").
+ *
+ * @return int[]
+ */
+function photo_moderator_user_ids(): array {
+    $out = [];
+    try {
+        $cfg = get_app_config();
+        if (isset($cfg['photo_moderator_user_ids']) && is_array($cfg['photo_moderator_user_ids'])) {
+            foreach ($cfg['photo_moderator_user_ids'] as $v) {
+                $n = (int) $v;
+                if ($n > 0) {
+                    $out[] = $n;
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        // config fehlt
+    }
+    $env = getenv('ALTBAUFINDER_PHOTO_MODERATOR_IDS');
+    if ($env !== false && $env !== '') {
+        foreach (explode(',', (string) $env) as $part) {
+            $n = (int) trim($part);
+            if ($n > 0) {
+                $out[] = $n;
+            }
+        }
+    }
+    return array_values(array_unique($out));
+}
+
+function is_photo_moderator(?int $userId): bool {
+    if ($userId === null || $userId < 1) {
+        return false;
+    }
+    return in_array($userId, photo_moderator_user_ids(), true);
+}
+
 function mask_email(string $email): string {
     $email = trim($email);
     $at = strpos($email, '@');

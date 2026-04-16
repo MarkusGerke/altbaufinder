@@ -18,14 +18,26 @@ export interface AuthUser {
   id: number
   email: string
   displayName: string
+  /** Gesetzt nach /auth/me.php – Foto-Moderation. */
+  isPhotoModerator?: boolean
 }
 
-function parseAuthUser(raw: { id: number; email: string; displayName?: string | null }): AuthUser {
+function parseAuthUser(raw: {
+  id: number
+  email: string
+  displayName?: string | null
+  isPhotoModerator?: boolean
+}): AuthUser {
   const dn =
     raw.displayName != null && String(raw.displayName).trim() !== ''
       ? String(raw.displayName).trim()
       : (raw.email.split('@')[0] || 'Nutzer')
-  return { id: raw.id, email: raw.email, displayName: dn }
+  return {
+    id: raw.id,
+    email: raw.email,
+    displayName: dn,
+    ...(raw.isPhotoModerator === true ? { isPhotoModerator: true } : {}),
+  }
 }
 
 export interface MeResponse {

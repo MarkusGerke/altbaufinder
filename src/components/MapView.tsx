@@ -152,7 +152,7 @@ function tileIdToStringId(tileId: number): string {
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
 
 /** Mindestens ein Anzeige-Filter aktiv (sonst keine 3D-Gebäude / keine Vektor-Extrusion). */
-export function hasActiveBuildingFilters(filters: FilterState, appMode: AppMode): boolean {
+function hasActiveBuildingFilters(filters: FilterState, appMode: AppMode): boolean {
   if (appMode === 'viewer') {
     return (
       filters.showAltbauGruen ||

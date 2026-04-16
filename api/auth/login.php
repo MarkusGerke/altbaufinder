@@ -59,7 +59,12 @@ try {
     $token = jwt_encode(['sub' => $id], $secret);
     echo json_encode([
         'token' => $token,
-        'user'  => ['id' => $id, 'email' => $row['email'], 'displayName' => $dn],
+        'user'  => [
+            'id' => $id,
+            'email' => $row['email'],
+            'displayName' => $dn,
+            'isPhotoModerator' => is_photo_moderator($id),
+        ],
     ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     http_response_code(500);

@@ -18,6 +18,11 @@ public/data/berlin_mitte_buildings-v1.geojson
 # API config (DB-Credentials)
 api/config.php
 
+# OSM-Cache und hochgeladene Fotos (Struktur via .gitkeep)
+api/cache/osm_suggestions/*.json
+api/uploads/buildings/*
+!api/uploads/buildings/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
