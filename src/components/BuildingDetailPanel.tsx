@@ -7,6 +7,7 @@ import { segmentStorageKey } from '../utils/segmentStorageKey'
 import { BUILDING_USE_LABELS, BUILDING_USE_ORDER } from '@/lib/buildingUseLabels'
 import { fetchOsmBuildingSuggestion, parseOsmElementId } from '@/services/osmSuggestionApi'
 import { BuildingPhotoCapture } from '@/components/BuildingPhotoCapture'
+import { buildingPhotoServeUrl, fetchBuildingPhotoHasPublicApproved } from '@/services/buildingPhotoApi'
 import {
   CLASSIFICATION_HEX,
   CLASSIFICATION_LABELS,
@@ -85,6 +86,37 @@ function ClassificationButtons({
         Zurücksetzen
       </Button>
     </div>
+  )
+}
+
+/** Freigegebenes Foto für alle sichtbar (Viewer-Modus); Editor nutzt BuildingPhotoCapture. */
+function ApprovedBuildingPhotoPublic({ buildingId }: { buildingId: string }) {
+  const [approved, setApproved] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchBuildingPhotoHasPublicApproved(buildingId).then((yes) => {
+      if (!cancelled) setApproved(yes)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [buildingId])
+
+  if (!approved) return null
+
+  return (
+    <>
+      <Separator className="my-4" />
+      <div className="space-y-2">
+        <p className="text-muted-foreground text-sm">Gebäudefoto</p>
+        <img
+          src={buildingPhotoServeUrl(buildingId)}
+          alt="Freigegebenes Gebäudefoto"
+          className="border-input mt-1 max-h-56 w-full rounded-md border object-contain"
+        />
+      </div>
+    </>
   )
 }
 
@@ -203,6 +235,7 @@ function SingleBuildingDetail({ building, isEditor }: { building: SelectedBuildi
           </div>
         )}
       </dl>
+      {!isEditor && <ApprovedBuildingPhotoPublic buildingId={storageKey} />}
       {isEditor && (
         <>
           <Separator className="my-4" />

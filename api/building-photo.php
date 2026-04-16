@@ -3,6 +3,7 @@
  * Gebäudefoto: Status (GET), Upload (POST), Löschen (DELETE).
  * Nähe-Check aus geometry_json; lat/lng werden nicht gespeichert.
  * Neue Uploads: moderation_status = pending (öffentlich erst nach Freigabe via building-photo-moderate.php).
+ * GET mit public=1 (ohne Anmeldung): nur { hasApprovedPhoto } für die öffentliche Kartenansicht.
  */
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -121,6 +122,26 @@ try {
 
 $method = $_SERVER['REQUEST_METHOD'];
 $userId = auth_user_id_from_request();
+
+if ($method === 'GET' && isset($_GET['public']) && (string) $_GET['public'] === '1') {
+    $bid = isset($_GET['building_id']) ? trim((string) $_GET['building_id']) : '';
+    if ($bid === '' || strlen($bid) > 128) {
+        http_response_code(400);
+        echo json_encode(['hasApprovedPhoto' => false, 'error' => 'building_id fehlt'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    try {
+        ensure_marks_tables($pdo);
+        ensure_building_photos_table($pdo);
+        $pr = photo_row_for_building($pdo, $bid);
+        $ok = $pr !== null && (($pr['moderation_status'] ?? '') === 'approved');
+        echo json_encode(['hasApprovedPhoto' => $ok], JSON_UNESCAPED_UNICODE);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['hasApprovedPhoto' => false], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
 
 if ($method === 'GET') {
     if ($userId === null) {

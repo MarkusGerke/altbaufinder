@@ -3,6 +3,19 @@ import { AUTH_TOKEN_KEY } from './authApi'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
+/** Ohne Login: ob für dieses Gebäude ein freigegebenes Foto existiert (für Viewer-Panel). */
+export async function fetchBuildingPhotoHasPublicApproved(buildingId: string): Promise<boolean> {
+  const q = new URLSearchParams({ building_id: buildingId, public: '1' })
+  try {
+    const res = await fetch(`${API_BASE}/building-photo.php?${q}`)
+    if (!res.ok) return false
+    const data = await readJsonResponse<{ hasApprovedPhoto?: boolean }>(res)
+    return data.hasApprovedPhoto === true
+  } catch {
+    return false
+  }
+}
+
 /** Muss mit api/building-photo.php PHOTO_MAX_DISTANCE_M übereinstimmen. */
 export const PHOTO_UPLOAD_MAX_DISTANCE_M = 250
 
