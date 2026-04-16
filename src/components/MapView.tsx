@@ -6,7 +6,7 @@ import type { AppMode, ClassificationEntry } from '../types'
 import type { FilterState } from './Toolbar'
 import { CLASSIFICATION_HEX } from '../classificationLabels'
 import { getSunPosition, sunToLightPosition } from '../utils/sunPosition'
-import { BERLIN_MAP_MAX_BOUNDS, BERLIN_WITHIN_POLYGON, isLatLngInBerlin } from '@/lib/berlinBounds'
+import { BERLIN_MAP_MAX_BOUNDS, isLatLngInBerlin } from '@/lib/berlinBounds'
 import { geoJsonPolygonCentroid } from '@/utils/geoUtils'
 
 const BERLIN_CENTER: [number, number] = [13.404954, 52.520008]
@@ -153,14 +153,11 @@ function tileIdToStringId(tileId: number): string {
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
 
-/** OSM-Vektor-Gebäude nur innerhalb Berlin (Land). */
-const BERLIN_BUILDINGS_FILTER = ['within', BERLIN_WITHIN_POLYGON] as unknown as maplibregl.FilterSpecification
-
-const BERLIN_BUILDINGS_EXTRUSION_FILTER = [
-  'all',
-  ['within', BERLIN_WITHIN_POLYGON],
-  ['!=', ['get', 'hide_3d'], true],
-] as unknown as maplibregl.FilterSpecification
+/**
+ * Kein `within`-Filter auf den OpenMapTiles-Building-Layern: dort liefern die Kacheln
+ * Geometrien, für die `within` praktisch nie erfüllt ist → keine grauen Grundrisse mehr.
+ * Berlin-Eingrenzung: maxBounds, Klick-Prüfung, Speichern-API, Klassifikations-Overlay.
+ */
 
 /** Mindestens ein Anzeige-Filter aktiv (sonst keine 3D-Gebäude / keine Vektor-Extrusion). */
 function hasActiveBuildingFilters(filters: FilterState, appMode: AppMode): boolean {
@@ -527,7 +524,6 @@ export default function MapView({
           type: 'fill',
           source: VECTOR_SOURCE,
           'source-layer': BUILDING_SOURCE_LAYER,
-          filter: BERLIN_BUILDINGS_FILTER,
           paint: {
             'fill-color': baseFill,
             'fill-opacity': baseFillOpacity,
@@ -550,7 +546,7 @@ export default function MapView({
           type: 'fill-extrusion',
           source: VECTOR_SOURCE,
           'source-layer': BUILDING_SOURCE_LAYER,
-          filter: BERLIN_BUILDINGS_EXTRUSION_FILTER,
+          filter: ['!=', ['get', 'hide_3d'], true],
           paint: {
             'fill-extrusion-color': whiteModeRef.current ? '#64748b' : '#94a3b8',
             'fill-extrusion-height': heightExpr,
