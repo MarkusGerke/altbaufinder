@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { Geometry } from 'geojson'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/context/AuthContext'
@@ -29,10 +29,15 @@ function moderationLabel(s: BuildingPhotoInfo['moderationStatus']): string {
 
 export function BuildingPhotoCapture({ buildingId, buildingGeometry }: Props) {
   const { isLoggedIn, user } = useAuth()
-  const inputRef = useRef<HTMLInputElement>(null)
+  const cameraInputId = useId()
   const [status, setStatus] = useState<BuildingPhotoStatusResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
+  /**
+   * Safari/iOS: programmatisches input.click() nach Geolocation-Callback zählt nicht als Nutzer-Geste.
+   * Zweiter Schritt: sichtbares <label htmlFor> – echter Tap öffnet die Kamera.
+   */
+  const [geoOkForCamera, setGeoOkForCamera] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const blobUrlRef = useRef<string | null>(null)
 
@@ -58,6 +63,10 @@ export function BuildingPhotoCapture({ buildingId, buildingGeometry }: Props) {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    setGeoOkForCamera(false)
+  }, [buildingId])
 
   useEffect(() => {
     revokePreview()
@@ -111,8 +120,9 @@ export function BuildingPhotoCapture({ buildingId, buildingGeometry }: Props) {
 
   useEffect(() => () => revokePreview(), [buildingId, revokePreview])
 
-  const onFotoAufnehmen = useCallback(() => {
+  const onStandortPruefen = useCallback(() => {
     setHint(null)
+    setGeoOkForCamera(false)
     if (!centroid) {
       setHint('Kein Gebäudeumriss – bitte Gebäude erneut anklicken oder Klassifikation speichern.')
       return
@@ -134,16 +144,18 @@ export function BuildingPhotoCapture({ buildingId, buildingGeometry }: Props) {
         const ok = d <= PHOTO_UPLOAD_MAX_DISTANCE_M
         setBusy(false)
         if (!ok) {
+          setGeoOkForCamera(false)
           setHint(`Zu weit vom Gebäude (ca. ${Math.round(d)} m, max. ${PHOTO_UPLOAD_MAX_DISTANCE_M} m).`)
           return
         }
-        setHint(`Im Umkreis (${Math.round(d)} m). Kamera öffnen …`)
-        requestAnimationFrame(() => {
-          inputRef.current?.click()
-        })
+        setHint(
+          `Im Umkreis (${Math.round(d)} m). Tippen Sie auf „Kamera öffnen“ (unter iOS nötig, damit Safari die Kamera startet).`
+        )
+        setGeoOkForCamera(true)
       },
       () => {
         setBusy(false)
+        setGeoOkForCamera(false)
         setHint('Standort nicht verfügbar. Bitte Standortfreigabe erteilen oder GPS aktivieren.')
       },
       { enableHighAccuracy: true, timeout: 14_000, maximumAge: 0 }
@@ -153,6 +165,7 @@ export function BuildingPhotoCapture({ buildingId, buildingGeometry }: Props) {
   const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
+    setGeoOkForCamera(false)
     if (!file || !status?.canUpload || !centroid) return
     setBusy(true)
     setHint('Wird hochgeladen …')
@@ -222,23 +235,31 @@ export function BuildingPhotoCapture({ buildingId, buildingGeometry }: Props) {
   return (
     <div className="space-y-3">
       <p className="text-muted-foreground text-xs leading-relaxed">
-        <strong className="text-foreground">Ablauf:</strong> Stufe setzen und in der Toolbar speichern. Dann{' '}
-        <strong className="text-foreground">Foto aufnehmen</strong> – Standort wird einmalig geprüft (wird nicht
-        gespeichert), danach öffnet sich die Kamera. Nach „Speichern“ in der Kamera-App wird das Bild hochgeladen und
-        zuerst moderiert.
+        <strong className="text-foreground">Ablauf:</strong> Stufe setzen und in der Toolbar speichern. Zuerst{' '}
+        <strong className="text-foreground">Standort prüfen</strong>. Liegt alles im Radius, erscheint{' '}
+        <strong className="text-foreground">Kamera öffnen</strong> – darauf tippen (Safari/iOS). Standort wird nicht
+        gespeichert. Max. {PHOTO_UPLOAD_MAX_DISTANCE_M} m zum Gebäude.
       </p>
       <Button
         type="button"
         className="w-full"
         disabled={busy || !centroid}
-        onClick={onFotoAufnehmen}
+        onClick={onStandortPruefen}
       >
-        {busy ? 'Bitte warten …' : 'Foto aufnehmen'}
+        {busy ? 'Bitte warten …' : geoOkForCamera ? 'Standort erneut prüfen' : '1. Standort prüfen'}
       </Button>
+      {geoOkForCamera && (
+        <label
+          htmlFor={cameraInputId}
+          className="border-input bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-md border px-4 py-2 text-sm font-medium shadow-xs"
+        >
+          2. Kamera öffnen
+        </label>
+      )}
       <input
-        ref={inputRef}
+        id={cameraInputId}
         type="file"
-        className="hidden"
+        className="sr-only"
         accept="image/*"
         capture="environment"
         onChange={onPickFile}

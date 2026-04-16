@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth_helpers.php';
 
-const PHOTO_MAX_DISTANCE_M = 120.0;
+const PHOTO_MAX_DISTANCE_M = 250.0;
 const PHOTO_MAX_BYTES = 6 * 1024 * 1024;
 
 function haversine_m(float $lat1, float $lon1, float $lat2, float $lon2): float {

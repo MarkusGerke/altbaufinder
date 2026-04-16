@@ -4,7 +4,7 @@ import { AUTH_TOKEN_KEY } from './authApi'
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
 /** Muss mit api/building-photo.php PHOTO_MAX_DISTANCE_M übereinstimmen. */
-export const PHOTO_UPLOAD_MAX_DISTANCE_M = 120
+export const PHOTO_UPLOAD_MAX_DISTANCE_M = 250
 
 export type PhotoModerationStatus = 'pending' | 'approved' | 'rejected'
 
